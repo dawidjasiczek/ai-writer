@@ -87,16 +87,23 @@ class ExtractTab(ctk.CTkFrame):
 
         preview_header = ctk.CTkFrame(right, fg_color="transparent")
         preview_header.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
-        ctk.CTkLabel(preview_header, text="Podgląd wyciągniętej treści", font=ctk.CTkFont(weight="bold")).pack(
-            side="left"
+        ctk.CTkLabel(preview_header, text="Podgląd:", font=ctk.CTkFont(weight="bold")).pack(
+            side="left", padx=(0, 6)
         )
 
-        self._preview_selector = ctk.CTkComboBox(
-            preview_header, values=["–"], command=self._load_preview, width=300
+        self._preview_segment_combo = ctk.CTkComboBox(
+            preview_header, values=["–"], command=self._load_preview, width=280
         )
-        self._preview_selector.pack(side="left", padx=8)
-        ctk.CTkButton(preview_header, text="Odśwież listę", command=self._refresh_preview_list, width=110).pack(
-            side="left"
+        self._preview_segment_combo.pack(side="left", padx=4)
+
+        self._preview_mode = ctk.CTkSegmentedButton(
+            preview_header, values=["RAW", "FULL"], command=self._load_preview, width=120
+        )
+        self._preview_mode.set("RAW")
+        self._preview_mode.pack(side="left", padx=4)
+
+        ctk.CTkButton(preview_header, text="Odśwież", command=self._refresh_preview_list, width=80).pack(
+            side="left", padx=4
         )
 
         self._preview_text = ctk.CTkTextbox(right, wrap="word", font=ctk.CTkFont(family="Courier", size=11))
@@ -319,35 +326,37 @@ class ExtractTab(ctk.CTkFrame):
             for seg in src.segments:
                 raw = self._sm.raw_text_path(src.id, seg.id)
                 full = self._sm.full_text_path(src.id, seg.id)
-                if raw.exists():
-                    options.append(f"[RAW] {src.display_name} / {seg.name}")
-                if full.exists():
-                    options.append(f"[FULL] {src.display_name} / {seg.name}")
-        self._preview_selector.configure(values=options if options else ["–"])
+                if raw.exists() or full.exists():
+                    options.append(f"{src.display_name} / {seg.name}")
+        self._preview_segment_combo.configure(values=options if options else ["–"])
         if options:
-            self._preview_selector.set(options[0])
+            self._preview_segment_combo.set(options[0])
+            self._load_preview(options[0])
 
-    def _load_preview(self, value: str) -> None:
-        if value.startswith("[RAW] ") or value.startswith("[FULL] "):
-            prefix = "[RAW] " if value.startswith("[RAW] ") else "[FULL] "
-            rest = value[len(prefix):]
-            parts = rest.split(" / ", 1)
-            if len(parts) != 2:
-                return
-            display_name, seg_name = parts
-            for src in self._sm.state.sources:
-                if src.display_name == display_name:
-                    for seg in src.segments:
-                        if seg.name == seg_name:
-                            if prefix == "[RAW] ":
+    def _load_preview(self, value: str = None) -> None:
+        value = value or self._preview_segment_combo.get()
+        mode = self._preview_mode.get()
+        if not value or value == "–":
+            return
+        parts = value.split(" / ", 1)
+        if len(parts) != 2:
+            return
+        display_name, seg_name = parts
+        for src in self._sm.state.sources:
+            if src.display_name == display_name:
+                for seg in src.segments:
+                    if seg.name == seg_name:
+                        if mode == "FULL":
+                            path = self._sm.full_text_path(src.id, seg.id)
+                            if not path.exists():
                                 path = self._sm.raw_text_path(src.id, seg.id)
-                            else:
-                                path = self._sm.full_text_path(src.id, seg.id)
-                            if path.exists():
-                                content = path.read_text(encoding="utf-8")
-                                self._preview_text.delete("1.0", "end")
-                                self._preview_text.insert("1.0", content)
-                            return
+                        else:
+                            path = self._sm.raw_text_path(src.id, seg.id)
+                        if path.exists():
+                            content = path.read_text(encoding="utf-8")
+                            self._preview_text.delete("1.0", "end")
+                            self._preview_text.insert("1.0", content)
+                        return
 
     # ------------------------------------------------------------------
     # Helpers

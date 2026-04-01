@@ -1,17 +1,28 @@
-"""Settings tab: API key, default model, prompt editor."""
+"""Settings tab: API key, default model, prompt editor, data reset."""
 from __future__ import annotations
 
+import shutil
+from typing import Callable, Optional
+
 import customtkinter as ctk
+from tkinter import messagebox
 
 from ..models import AVAILABLE_MODELS
 
 
 class SettingsTab(ctk.CTkFrame):
-    def __init__(self, master, state_manager, ai_service_ref: list, **kwargs):
+    def __init__(
+        self,
+        master,
+        state_manager,
+        ai_service_ref: list,
+        refresh_callback: Optional[Callable] = None,
+        **kwargs,
+    ):
         super().__init__(master, **kwargs)
         self._sm = state_manager
-        # ai_service_ref is a mutable list so we can swap the AIService object later
         self._ai_ref = ai_service_ref
+        self._refresh_cb = refresh_callback
 
         self._build()
         self._load()
@@ -71,7 +82,24 @@ class SettingsTab(ctk.CTkFrame):
 
         row += 1
         save_btn = ctk.CTkButton(self, text="Zapisz ustawienia", command=self._save)
-        save_btn.grid(row=row, column=0, columnspan=2, pady=(8, 16))
+        save_btn.grid(row=row, column=0, columnspan=2, pady=(8, 8))
+
+        row += 1
+        ctk.CTkLabel(
+            self,
+            text="Strefa niebezpieczna",
+            font=ctk.CTkFont(weight="bold"),
+            text_color=("#c0392b", "#e74c3c"),
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(16, 2))
+
+        row += 1
+        ctk.CTkButton(
+            self,
+            text="Wyczyść dane projektu (usuń output, resetuj źródła)",
+            command=self._clear_data,
+            fg_color="#c0392b",
+            hover_color="#922b21",
+        ).grid(row=row, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 16))
 
     def _load(self) -> None:
         s = self._sm.state
@@ -98,3 +126,69 @@ class SettingsTab(ctk.CTkFrame):
         # Update the live AIService with new API key
         if self._ai_ref:
             self._ai_ref[0].update_api_key(api_key)
+
+    def _clear_data(self) -> None:
+        dialog = _ConfirmClearDialog(self)
+        self.wait_window(dialog)
+        if not dialog.confirmed:
+            return
+
+        # Delete output folder contents
+        output_dir = self._sm.project_dir / "output"
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+
+        # Reset state: keep API key and prompts, wipe sources and questions
+        api_key = self._sm.state.openai_api_key
+        model = self._sm.state.default_model
+        prompts_dict = self._sm.state.prompts.to_dict()
+
+        self._sm.state.sources.clear()
+        self._sm.state.questions.clear()
+        self._sm.save()
+        self._sm._ensure_dirs()
+
+        messagebox.showinfo("Gotowe", "Dane projektu zostały wyczyszczone.")
+        if self._refresh_cb:
+            self._refresh_cb()
+
+
+class _ConfirmClearDialog(ctk.CTkToplevel):
+    """Asks the user to type 'tak, na pewno' before clearing data."""
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("Potwierdź wyczyszczenie danych")
+        self.resizable(False, False)
+        self.geometry("420x180")
+        self.grab_set()
+        self.confirmed = False
+
+        ctk.CTkLabel(
+            self,
+            text="Ta operacja usunie wszystkie wyciągnięte teksty i wyniki AI.\nŹródła PDF pozostaną na dysku.",
+            wraplength=380,
+        ).pack(pady=(16, 8), padx=16)
+        ctk.CTkLabel(
+            self,
+            text='Wpisz "tak, na pewno" aby potwierdzić:',
+            font=ctk.CTkFont(weight="bold"),
+        ).pack(padx=16)
+
+        self._entry = ctk.CTkEntry(self, width=260)
+        self._entry.pack(pady=8)
+
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(pady=(0, 12))
+        ctk.CTkButton(btn_row, text="Usuń dane", command=self._on_confirm, fg_color="#c0392b").pack(
+            side="left", padx=8
+        )
+        ctk.CTkButton(btn_row, text="Anuluj", command=self.destroy).pack(side="left", padx=8)
+
+    def _on_confirm(self) -> None:
+        if self._entry.get().strip().lower() == "tak, na pewno":
+            self.confirmed = True
+            self.destroy()
+        else:
+            self._entry.delete(0, "end")
+            self._entry.configure(placeholder_text='Wpisz dokładnie: tak, na pewno')

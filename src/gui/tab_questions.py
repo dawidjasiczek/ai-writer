@@ -112,10 +112,10 @@ class QuestionsTab(ctk.CTkFrame):
         if self._selected_id is not None:
             self._sm.update_question(self._selected_id, title=title, description=desc)
         else:
-            q = self._sm.add_question(title, desc)
-            self._selected_id = q.id
-            self._id_label.configure(text=f"ID pytania: {q.id}")
+            self._sm.add_question(title, desc)
         self._refresh()
+        # Reset to "new question" mode so user can immediately add another
+        self._new_question()
 
     def _delete_question(self) -> None:
         if self._selected_id is None:

@@ -116,10 +116,14 @@ class Prompts:
         "Otrzymasz fragment źródła akademickiego. Twoim zadaniem jest:\n"
         "1. Dla każdego zagadnienia z listy poniżej: wyciągnąć dokładne cytaty (dosłowne fragmenty tekstu) "
         "dotyczące tego zagadnienia jeśli się pojawiają, oraz napisać krótkie podsumowanie co ten fragment mówi na ten temat.\n"
-        "2. Jeśli zagadnienie nie pojawia się w tekście, zwróć pustą listę cytatów i puste podsumowanie.\n"
-        "3. Cytaty muszą być dosłowne, nie parafrazowane.\n\n"
-        "ZAGADNIENIA DO ANALIZY:\n{questions_block}\n\n"
-        "Odpowiedz w formacie JSON zgodnym ze schematem."
+        "2. Jeśli zagadnienie nie pojawia się w tekście, zwróć pustą listę cytatów i puste podsumowanie dla tego zagadnienia.\n"
+        "3. Cytaty muszą być dosłowne, nie parafrazowane.\n"
+        "4. WAŻNE: fragment_id w odpowiedzi JSON MUSI być dokładnie tym samym numerem ID co na liście zagadnień poniżej. "
+        "Nie twórz własnych identyfikatorów. Każde zagadnienie z listy musi mieć swój wpis w 'fragments'.\n\n"
+        "ZAGADNIENIA DO ANALIZY (format: ID. Tytuł):\n{questions_block}\n\n"
+        "Odpowiedz w formacie JSON zgodnym ze schematem. "
+        "Tablica 'fragments' musi zawierać dokładnie tyle elementów ile jest zagadnień na liście, "
+        "każdy z poprawnym fragment_id równym ID zagadnienia."
     )
 
     def to_dict(self) -> dict:

@@ -50,9 +50,13 @@ class SegmentSelector(ctk.CTkScrollableFrame):
             for seg in src.segments:
                 seg_var = tk.BooleanVar(value=False)
                 self._seg_vars[(src.id, seg.id)] = seg_var
+                has_graphics = any(
+                    seg.start_page <= pg <= seg.end_page for pg in src.graphic_pages
+                )
+                graphic_tag = "  [G]" if has_graphics else ""
                 seg_cb = ctk.CTkCheckBox(
                     src_frame,
-                    text=f"      {seg.name}  (s. {seg.start_page}–{seg.end_page})",
+                    text=f"      {seg.name}  (s. {seg.start_page}–{seg.end_page}){graphic_tag}",
                     variable=seg_var,
                     font=ctk.CTkFont(size=12),
                 )

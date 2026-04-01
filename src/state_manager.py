@@ -36,6 +36,9 @@ class StateManager:
             with open(self.state_file, encoding="utf-8") as f:
                 data = json.load(f)
             self.state = ProjectState.from_dict(data)
+        # Ensure segments are sorted by start_page after loading
+        for src in self.state.sources:
+            src.segments.sort(key=lambda s: s.start_page)
 
     def save(self) -> None:
         tmp = self.state_file.with_suffix(".tmp")
@@ -91,6 +94,7 @@ class StateManager:
         seg_id = f"seg_{uuid.uuid4().hex[:8]}"
         seg = Segment(id=seg_id, name=name, start_page=start_page, end_page=end_page)
         src.segments.append(seg)
+        src.segments.sort(key=lambda s: s.start_page)
         self.save()
         return seg
 
@@ -114,6 +118,7 @@ class StateManager:
             seg.start_page = start_page
         if end_page is not None:
             seg.end_page = end_page
+        src.segments.sort(key=lambda s: s.start_page)
         self.save()
 
     def remove_segment(self, source_id: str, segment_id: str) -> None:

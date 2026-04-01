@@ -75,7 +75,8 @@ def _extract_page_content(page: pdfplumber.page.Page) -> str:
 # ---------------------------------------------------------------------------
 
 PAGE_SEPARATOR = "\n\n\n=== [PAGE {page}] ===\n\n\n"
-GRAPHIC_PLACEHOLDER = "{{TRESCI_GRAFICZNE_STRONA_{page}}}"
+# Note: 4 braces so that .format(page=N) produces the literal {{TRESCI_GRAFICZNE_STRONA_N}}
+GRAPHIC_PLACEHOLDER = "{{{{TRESCI_GRAFICZNE_STRONA_{page}}}}}"
 
 
 def extract_segment_text(

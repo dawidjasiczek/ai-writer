@@ -250,7 +250,12 @@ def _save_segment_result(sm: StateManager, src, seg, raw_result: dict) -> None:
 
 
 def _aggregate_all(sm: StateManager) -> None:
-    """Build per-question aggregated JSON across all sources."""
+    """Build per-question aggregated JSON across all sources.
+
+    Uses (source_id, segment_id) as a deduplication key so re-running
+    analysis on the same segment overwrites the previous entry.
+    """
+    # question_map: fid -> { fragment_id, fragment_title, results_by_key: {(src_id,seg_id): entry} }
     question_map: dict[int, dict] = {}
 
     for src in sm.state.sources:
@@ -264,20 +269,24 @@ def _aggregate_all(sm: StateManager) -> None:
                 question_map[fid] = {
                     "fragment_id": fid,
                     "fragment_title": frag.get("fragment_title", ""),
-                    "results": [],
+                    "results_by_key": {},
                 }
-            question_map[fid]["results"].append(
-                {
-                    "source_id": src.id,
-                    "source_display_name": src.display_name,
-                    "segment_id": frag.get("_segment_id", ""),
-                    "segment_name": frag.get("_segment_name", ""),
-                    "fragment_summary": frag.get("fragment_summary", ""),
-                    "quotes": frag.get("quotes", []),
-                }
-            )
+            key = (src.id, frag.get("_segment_id", ""))
+            question_map[fid]["results_by_key"][key] = {
+                "source_id": src.id,
+                "source_display_name": src.display_name,
+                "segment_id": frag.get("_segment_id", ""),
+                "segment_name": frag.get("_segment_name", ""),
+                "fragment_summary": frag.get("fragment_summary", ""),
+                "quotes": frag.get("quotes", []),
+            }
 
     for qid, agg in question_map.items():
+        output = {
+            "fragment_id": agg["fragment_id"],
+            "fragment_title": agg["fragment_title"],
+            "results": list(agg["results_by_key"].values()),
+        }
         sm.question_aggregated_json_path(qid).write_text(
-            json.dumps(agg, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8"
         )

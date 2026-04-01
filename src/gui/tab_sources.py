@@ -240,7 +240,9 @@ class SourcesTab(ctk.CTkFrame):
             self._sm.update_segment(self._selected_source_id, self._selected_seg_id, name, start, end)
         else:
             self._sm.add_segment(self._selected_source_id, name, start, end)
-            self._selected_seg_id = None
+        # Always reset to "new segment" mode after saving
+        self._selected_seg_id = None
+        self._seg_editor.edit(segment=None)
         src = self._sm.get_source(self._selected_source_id)
         if src:
             self._refresh_seg_list(src)

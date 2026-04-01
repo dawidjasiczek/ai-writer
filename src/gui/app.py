@@ -58,7 +58,7 @@ class App(ctk.CTk):
         self._questions_tab = make_tab(QuestionsTab, "Pytania", self._sm)
         self._analyze_tab = make_tab(AnalyzeTab, "Analiza", self._sm, self._ai_ref)
         self._results_tab = make_tab(ResultsTab, "Wyniki", self._sm)
-        self._settings_tab = make_tab(SettingsTab, "Ustawienia", self._sm, self._ai_ref)
+        self._settings_tab = make_tab(SettingsTab, "Ustawienia", self._sm, self._ai_ref, self._refresh_all)
 
         # Status bar
         self._status = StatusBar(self)
