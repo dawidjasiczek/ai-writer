@@ -1,0 +1,62 @@
+Będziemy stawiali nową aplikację python.
+
+Cel aplikacji: napisanie rozdziału pracy magisterskiej na podstawie dostępnych źródeł -  wrzucajac źródłą, dzieląć na kawałki, wyciągając z kawałków fragmenty/cytaty, 
+
+
+Jaki będzie ogólny flow aplikacji - pracy użytkownika
+1. Użytkownik wrzuci nam do jakiegoś folderu pliki źródłowe 
+2. Następnie, każdy z tych plików (bo one mają swoje nazwy jakieś dziwne) będzie mógł mieć nadaną nazwę właściwą nadaną (dostępną do zmiany w dowolnym momencie)
+3. Następnie, będzie możliwość dla każdego z tych plików zdefiniowania przedziałów, nazywać się będa one SEGMENTY. Czym są segmenty? Segmenty (czy też przedziały), to zdefiniownae przez użytkownika zakresy tematyczne, np.: wyobraźmy sobie, że dany plik jest jakims raportem i ma 20 działów, użytkownik może stworzyć listę Dział - zakres (np. wstęp od 5 do 10 strony, rozdział xyz od 22 do 30 strony). W ten sposób de-facto stworzymy troche spis treści gdzie będziemy wiedzieli, w jakich stronach jest jaki dział (i do następnych kroków nie będzie trzeba przesyłąć całego pliku). 
+4. Użytkownik będzie mógł wypisać dla każdego źródła, na jakich stronach znajdują się treśći graficzne które powinien przeanalizować osobno (one pójdą do innego procesu AI)
+W tym momencie użytkownik będzie miał swoje źródłą i one będą miały jakąś formę ustrukturyzowania.
+5. Następnie, użytkownik będzie mógł za pomocą pdf-plumber ( w pliku EXA jest moj testowy przykładowy skrpycik) dla każdego segmentu każdego pliku wyciągnąć treść właściwa z pliku do pliku tekstowego. Co ważne, w przypadku plików oznaczonych w kroku 4 (czyli ozanczeniu jako treści graficzne) - tam tego nie będziemy robili - tam zostawimy tylko pusty placeholder w miejscu gdzie to jest w postaci {{TRESCI_GRAFICZNE_STRONA_XYZ}} które podmieni następny krok. Ważne jest też dla mnie by strony były rozdzielone jakoś np. \n\n\n==[PAGE XYZ]===\n\n\n czy coś
+6. Następne, dla każdego z tych segmentów , uruchomimy OSOBNY PROCES AI (który będzie miał swój, osobny prompt) - jego celem będzie wyciągnięcie dokładnej zawartości danej strony pdf / danego obrazka wizualnie i opisanie go. Zebrany opis należy zapisać do pliku odpowiednio podpisanego zeby było wiadomo jaka strona z jakiego pliku to. (wysyłana jako user message, bo prompt systemowy jest zdefiniowany). aby wysłać stronę z grafikami do AI (Vision), aplikacja musi najpierw przekonwertować tę konkretną stronę PDF na obraz (np. .png) używając biblioteki takiej jak PyMuPDF (fitz) lub pdf2image, i dopiero ten obrazek wysłać  do API OpenAI.
+7. Następnie, dla każdego {{TRESCI_GRAFICZNE_STRONA_XYZ}} utworzy NOWY PLIK (czyli nie nadpisuje tego poprzedniego) ale z wypełnionymi tymi placeholderami zawartośćią 6 dla każdego segmentu każdego pliku
+8. Następnie, (to jest powiążane z krokiem 9) użytkownik może zdefiniować listę pytań/czego szukać ma ai w segmentach składające się z pytania/tytułu i opcjonalnego opisu. Każde pytanie powinno dostać ID (kolejny int zaczynajac od 1)
+9. Następnie, mając już te placeholdery wypełnone oraz listę pytań użytkownik może wysłać WYBRANE SEGMENTY/PLIKI (patrz wybieranie segmentów) to do KOLJNEGO, INNEGO PROCESU AI:
+Zadaniem tego procesu będzie dostanie feragmentu źródła i wyciągniecie wszystkich cytatów dot. danego zagadnienia jeśli się pojawia oraz podsumowanie dla danego zagadnienia tematycznego)
+- ten proces ai dostaje treść segmentu (wysyłana jako user message, bo prompt systemowy jest zdefiniowany ) oraz, co ważne, w promptcie systemowym powinna być podmienialna zmienan która wstrzyknie wszytkie pytania z kroku 9 wraz z ich opisami. 
+- do ai powinniśmy generować json schema, która generalnie wyglądała by jakoś tak:
+```
+{
+  "fragments": [
+    {
+      "fragment_id": 1, // to nasze id pytania
+      "fragment_title": "Tytuł fragmentu", // to nasza treść pytania
+      "fragment_summary": "Krótkie podsumowanie treści...", // tu ai ma zrobić proste podsumowanie co o tym mówi ten fragment
+      "quotes": [
+        {
+          "text": "Treść cytatu",
+          "page": 10
+        } // a tu dokładne cytaty oraz info na jkaiej stronie są
+      ]
+    }
+  ]
+}
+```
+Następnie, zwrotkę tego powinniśmy zapisać do pliku (najlepiej byłoby, jakby każdy segment dostał swój plik + istniał jeden plik który skleja wszystkie segmenty danego źródła) ORAZ plik który skleja wszystkie odpowiedzi na pytanie z każdego pliku/segmentu przeanalizowanego (czyli mam json który zbiera wszystkie cytaty + podsumowania (z podpisaniem skąd to oczywiście) ze wszystkich przeanalziowanych już źródeł)
+
+10. Następnie gdy mamy już to, użytkownik powinien móc mieć widok, gdzie może WYBRAĆ PYTANIE (z kroku 8) a następnie wyświetlić sobie dla każdego pliku (czyli dla każdego segmentu w nim - ale to też możę wybrać, tj, żeby mógł zdedcydowac ze chce wiedziec cały plik, lub np chce widziec tylko segment x i y) wszystkie cytaty (cytat + strona) oraz podsumwoania (czyli zagregować je.).
+Powinno dać się też po zaznaczeniu wybranych widoków wygenerować plik .txt który będzie w sobie miał zgrabnie wzięte wszystkie cytaty i podsumowania z danego pytania.
+
+
+
+Wybranie segmentów:
+dla kroku 6, 8, 9
+będzie możliwość wyboru albo całego pliku/wszyustkich plików/konkretnych segmentów konkretnych plików. Czyli mogę np.: zaznaczyć plik A, plik B, segmenty x oraz y z pliku C oraz w ogole nie brać pliku D
+tj, nie trzeba procesować WSZYSTKICH ŹRÓDEŁ I WSZYSTKICH SEGMENTÓW od razu - można sobie to robic kawałkami.
+
+
+Założenia aplikacji:
+- wszystkie pliki które zapisujesz mają być dobrze ustrukutryzowanego. Dobrze, jakby każda operacja (czyli wiesz, gennerowanie czegoś itp) zapisywała swój wynik a nic nie działo się i znikało.
+- istnieje osobne miejsce gdzie mozna edytować prompty wszystkie używane w systemie
+- dla każdego źródła i segmentu można podejrzeć ich wyciagniete tresci (krok 5 i 7), opisy graficzne stron (krok 6) 
+- pliki powinny być jakoś mądrze zapisywane (folder użytkownika? ) może coś w stylu pathlib
+- maksymalnie można wysłać na raz 4 operacje do ai, następne wysyłają się dopiero jak poprzednie się skończą
+- ma mieć proste gui za pomocą https://customtkinter.tomschimansky.com/documentation/ Ui ma być proste ale czytelne.
+- każde zadanie ai ma mieć możliwość wybrania modelu gpt (https://developers.openai.com/api/docs/quickstart) modele do wyboru: gpt-5.4-mini, gpt-5.4-nano, gpt-5.4
+- użytkownik podaje klucz openai (gdzieś w interfejsie). Dokumentacja openai: https://developers.openai.com/api/docs
+- uzywamy responses api nowego
+- Aplikacja powinna trzymać cały swój stan (listę plików, definicje segmentów, listę pytań, statusy przetworzenia) w głównym pliku project_state.json w folderze projektu. Same wyciągnięte teksty i jsony z AI mogą leżeć w podfolderach, ale musi istnieć jeden plik centralny, który to spina
+- Jeśli tekst segmentu jest bardzo długi, aplikacja powinna to wykryć i podzielić prompt na mniejsze paczki (chunking), aby nie przekroczyć limitu tokenów wybranego modelu i zapewnić dokładność ekstrakcji cytatów.
+- Zrób prosty skypt .bat który uruchomi venv, zainstaluje requriements, aktywuje to../. i uruhcomi appke - tak zeby moja dziwezcyna na windows nie musiała się stresowac niczym po tym jak jej zainstaluje pythona. Lub, jeżeli to trudne - zrób mi proszę w readme instrukcje jak to uruchomic w ten sposob.
