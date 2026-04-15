@@ -266,7 +266,10 @@ class ResultsTab(ctk.CTkFrame):
             if quotes:
                 lines.append("Cytaty:")
                 for q in quotes:
-                    lines.append(f'  [s. {q.get("page", "?")}] "{q.get("text", "")}"')
+                    pg = q.get("page", "?")
+                    pg_end = q.get("page_end")
+                    pg_str = f"{pg}–{pg_end}" if pg_end and pg_end != pg else str(pg)
+                    lines.append(f'  [s. {pg_str}] "{q.get("text", "")}"')
             lines.append("")
         if not any_shown:
             lines.append("Brak wyników dla wybranych filtrów.")
@@ -310,7 +313,10 @@ class ResultsTab(ctk.CTkFrame):
             if quotes:
                 lines.append("Cytaty:")
                 for q in quotes:
-                    lines.append(f'  [s. {q.get("page", "?")}] "{q.get("text", "")}"')
+                    pg = q.get("page", "?")
+                    pg_end = q.get("page_end")
+                    pg_str = f"{pg}–{pg_end}" if pg_end and pg_end != pg else str(pg)
+                    lines.append(f'  [s. {pg_str}] "{q.get("text", "")}"')
             else:
                 lines.append("  (brak cytatów dla tego zagadnienia)")
             lines.append("")

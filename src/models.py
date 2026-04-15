@@ -117,7 +117,8 @@ class Prompts:
         "1. Dla każdego zagadnienia z listy poniżej: wyciągnąć dokładne cytaty (dosłowne fragmenty tekstu) "
         "dotyczące tego zagadnienia jeśli się pojawiają, oraz napisać krótkie podsumowanie co ten fragment mówi na ten temat.\n"
         "2. Jeśli zagadnienie nie pojawia się w tekście, zwróć pustą listę cytatów i puste podsumowanie dla tego zagadnienia.\n"
-        "3. Cytaty muszą być dosłowne, nie parafrazowane.\n"
+        "3. Cytaty muszą być dosłowne, nie parafrazowane. "
+        "Dla każdego cytatu podaj numer strony (page). Jeśli cytat rozciąga się na kilka stron, podaj też page_end (ostatnia strona cytatu); jeśli cytat mieści się na jednej stronie, ustaw page_end na null.\n"
         "4. WAŻNE: fragment_id w odpowiedzi JSON MUSI być dokładnie tym samym numerem ID co na liście zagadnień poniżej. "
         "Nie twórz własnych identyfikatorów. Każde zagadnienie z listy musi mieć swój wpis w 'fragments'.\n\n"
         "ZAGADNIENIA DO ANALIZY (format: ID. Tytuł):\n{questions_block}\n\n"
@@ -176,13 +177,21 @@ class ProjectState:
 class Quote:
     text: str
     page: int
+    page_end: Optional[int] = None  # set when the quote spans multiple pages
 
     def to_dict(self) -> dict:
-        return {"text": self.text, "page": self.page}
+        d: dict = {"text": self.text, "page": self.page}
+        if self.page_end is not None:
+            d["page_end"] = self.page_end
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Quote":
-        return cls(text=d["text"], page=d["page"])
+        return cls(
+            text=d["text"],
+            page=d["page"],
+            page_end=d.get("page_end"),
+        )
 
 
 @dataclass

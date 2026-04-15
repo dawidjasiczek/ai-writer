@@ -49,8 +49,14 @@ QUOTE_EXTRACTION_SCHEMA = {
                                 "properties": {
                                     "text": {"type": "string"},
                                     "page": {"type": "integer"},
+                                    "page_end": {
+                                        "anyOf": [
+                                            {"type": "integer"},
+                                            {"type": "null"},
+                                        ]
+                                    },
                                 },
-                                "required": ["text", "page"],
+                                "required": ["text", "page", "page_end"],
                                 "additionalProperties": False,
                             },
                         },
