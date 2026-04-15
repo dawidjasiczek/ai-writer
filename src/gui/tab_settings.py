@@ -154,41 +154,53 @@ class SettingsTab(ctk.CTkFrame):
 
 
 class _ConfirmClearDialog(ctk.CTkToplevel):
-    """Asks the user to type 'tak, na pewno' before clearing data."""
+    """Asks the user to type 'tak, na pewno' before clearing data.
+
+    Widgets are created in after(50) to work around the CTkToplevel blank-
+    window rendering bug on Windows.
+    """
 
     def __init__(self, master):
         super().__init__(master)
         self.title("Potwierdź wyczyszczenie danych")
         self.resizable(False, False)
-        self.geometry("420x180")
-        self.grab_set()
+        self.geometry("440x200")
         self.confirmed = False
+        self._entry: Optional[ctk.CTkEntry] = None
+        # Build content after the window is visible to avoid blank rendering
+        self.after(50, self._build_content)
+        self.grab_set()
 
+    def _build_content(self) -> None:
         ctk.CTkLabel(
             self,
             text="Ta operacja usunie wszystkie wyciągnięte teksty i wyniki AI.\nŹródła PDF pozostaną na dysku.",
-            wraplength=380,
-        ).pack(pady=(16, 8), padx=16)
+            wraplength=400,
+        ).pack(pady=(16, 6), padx=16)
         ctk.CTkLabel(
             self,
             text='Wpisz "tak, na pewno" aby potwierdzić:',
             font=ctk.CTkFont(weight="bold"),
         ).pack(padx=16)
 
-        self._entry = ctk.CTkEntry(self, width=260)
+        self._entry = ctk.CTkEntry(self, width=280)
         self._entry.pack(pady=8)
+        self._entry.focus_set()
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(pady=(0, 12))
-        ctk.CTkButton(btn_row, text="Usuń dane", command=self._on_confirm, fg_color="#c0392b").pack(
-            side="left", padx=8
-        )
+        ctk.CTkButton(
+            btn_row, text="Usuń dane", command=self._on_confirm, fg_color="#c0392b"
+        ).pack(side="left", padx=8)
         ctk.CTkButton(btn_row, text="Anuluj", command=self.destroy).pack(side="left", padx=8)
 
     def _on_confirm(self) -> None:
+        if self._entry is None:
+            return
         if self._entry.get().strip().lower() == "tak, na pewno":
             self.confirmed = True
+            self.grab_release()
             self.destroy()
         else:
             self._entry.delete(0, "end")
-            self._entry.configure(placeholder_text='Wpisz dokładnie: tak, na pewno')
+            self._entry.configure(placeholder_text="Wpisz dokładnie: tak, na pewno")

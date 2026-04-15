@@ -9,6 +9,13 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
+try:
+    import fitz  # PyMuPDF
+    from PIL import Image, ImageTk
+    _PDF_PREVIEW_AVAILABLE = True
+except ImportError:
+    _PDF_PREVIEW_AVAILABLE = False
+
 from ..models import Source, Segment
 from ..state_manager import StateManager
 from ..pdf_service import get_pdf_page_count
@@ -29,12 +36,13 @@ class SourcesTab(ctk.CTkFrame):
     # ------------------------------------------------------------------
 
     def _build(self) -> None:
-        self.columnconfigure(0, weight=0, minsize=240)
-        self.columnconfigure(1, weight=1)
+        self.columnconfigure(0, weight=0, minsize=220)
+        self.columnconfigure(1, weight=1, minsize=340)
+        self.columnconfigure(2, weight=2, minsize=300)
         self.rowconfigure(0, weight=1)
 
-        # Left: source list
-        left = ctk.CTkFrame(self, width=240)
+        # ── col 0: source list ───────────────────────────────────────
+        left = ctk.CTkFrame(self, width=220)
         left.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
@@ -55,9 +63,9 @@ class SourcesTab(ctk.CTkFrame):
             btn_row, text="Usuń", command=self._remove_source, width=80, fg_color="#c0392b"
         ).pack(side="left", padx=2)
 
-        # Right: details panel
+        # ── col 1: details panel ─────────────────────────────────────
         right = ctk.CTkFrame(self)
-        right.grid(row=0, column=1, sticky="nsew", padx=(4, 8), pady=8)
+        right.grid(row=0, column=1, sticky="nsew", padx=(4, 4), pady=8)
         right.columnconfigure(0, weight=1)
         right.rowconfigure(3, weight=1)
 
@@ -70,9 +78,9 @@ class SourcesTab(ctk.CTkFrame):
         rename_row = ctk.CTkFrame(right, fg_color="transparent")
         rename_row.grid(row=1, column=0, sticky="ew", padx=8, pady=4)
         ctk.CTkLabel(rename_row, text="Nazwa wyświetlana:").pack(side="left", padx=(0, 6))
-        self._display_name_entry = ctk.CTkEntry(rename_row, width=280)
+        self._display_name_entry = ctk.CTkEntry(rename_row, width=220)
         self._display_name_entry.pack(side="left", padx=4)
-        ctk.CTkButton(rename_row, text="Zapisz nazwę", command=self._save_display_name, width=120).pack(
+        ctk.CTkButton(rename_row, text="Zapisz nazwę", command=self._save_display_name, width=110).pack(
             side="left", padx=4
         )
 
@@ -82,7 +90,7 @@ class SourcesTab(ctk.CTkFrame):
         ctk.CTkLabel(graphic_row, text="Strony graficzne (np. 3,7,15):").pack(
             side="left", padx=(0, 6)
         )
-        self._graphic_pages_entry = ctk.CTkEntry(graphic_row, width=200)
+        self._graphic_pages_entry = ctk.CTkEntry(graphic_row, width=160)
         self._graphic_pages_entry.pack(side="left", padx=4)
         ctk.CTkButton(
             graphic_row, text="Zapisz", command=self._save_graphic_pages, width=80
@@ -109,6 +117,10 @@ class SourcesTab(ctk.CTkFrame):
         # Segment editor
         self._seg_editor = SegmentEditor(seg_frame, on_save=self._save_segment, on_delete=self._delete_segment)
         self._seg_editor.grid(row=2, column=0, sticky="ew", padx=4, pady=4)
+
+        # ── col 2: PDF viewer ────────────────────────────────────────
+        self._pdf_viewer = PDFViewer(self)
+        self._pdf_viewer.grid(row=0, column=2, sticky="nsew", padx=(4, 8), pady=8)
 
     # ------------------------------------------------------------------
     # Source list management
@@ -168,6 +180,12 @@ class SourcesTab(ctk.CTkFrame):
         self._graphic_pages_entry.insert(0, ", ".join(str(p) for p in src.graphic_pages))
         self._seg_editor.clear()
         self._refresh_seg_list(src)
+        # Load PDF in viewer
+        pdf_path = self._sm.project_dir / "sources" / src.filename
+        if pdf_path.exists():
+            self._pdf_viewer.load_pdf(pdf_path)
+        else:
+            self._pdf_viewer.clear()
 
     def _clear_details(self) -> None:
         self._display_name_entry.delete(0, "end")
@@ -232,6 +250,7 @@ class SourcesTab(ctk.CTkFrame):
         seg = self._sm.get_segment(self._selected_source_id, seg_id)
         if seg:
             self._seg_editor.edit(segment=seg)
+            self._pdf_viewer.goto_page(seg.start_page)
 
     def _save_segment(self, name: str, start: int, end: int) -> None:
         if not self._selected_source_id:
@@ -259,6 +278,142 @@ class SourcesTab(ctk.CTkFrame):
             if src:
                 self._refresh_seg_list(src)
             self._refresh_cb()
+
+
+class PDFViewer(ctk.CTkFrame):
+    """Renders PDF pages one at a time using PyMuPDF."""
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self._doc: "fitz.Document | None" = None
+        self._page_idx: int = 0  # 0-based
+        self._total_pages: int = 0
+        self._photo = None  # keep reference to avoid GC
+        self._build()
+
+    def _build(self) -> None:
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        # Controls strip
+        ctrl = ctk.CTkFrame(self, fg_color="transparent")
+        ctrl.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 2))
+
+        self._prev_btn = ctk.CTkButton(ctrl, text="◀", width=32, command=self._prev)
+        self._prev_btn.pack(side="left", padx=2)
+
+        self._page_label = ctk.CTkLabel(ctrl, text="–", width=90)
+        self._page_label.pack(side="left", padx=4)
+
+        self._next_btn = ctk.CTkButton(ctrl, text="▶", width=32, command=self._next)
+        self._next_btn.pack(side="left", padx=2)
+
+        self._page_entry = ctk.CTkEntry(ctrl, width=56, placeholder_text="str.")
+        self._page_entry.pack(side="left", padx=(10, 2))
+        self._page_entry.bind("<Return>", self._jump_to_entered)
+
+        # Canvas + scrollbar
+        canvas_frame = ctk.CTkFrame(self, fg_color="transparent")
+        canvas_frame.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 4))
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
+
+        self._canvas = tk.Canvas(canvas_frame, bg="#1a1a2e", highlightthickness=0)
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self._canvas.configure(yscrollcommand=scrollbar.set)
+        self._canvas.bind("<Configure>", lambda _: self._render())
+
+        self._placeholder_label = ctk.CTkLabel(
+            self._canvas,
+            text="Wybierz źródło,\naby zobaczyć podgląd PDF",
+            text_color=("gray60", "gray50"),
+        )
+        self._canvas.create_window(0, 0, window=self._placeholder_label, anchor="nw", tags="placeholder")
+
+        self._set_controls_state("disabled")
+
+    def load_pdf(self, pdf_path: Path) -> None:
+        if not _PDF_PREVIEW_AVAILABLE:
+            return
+        if self._doc is not None:
+            self._doc.close()
+            self._doc = None
+        self._doc = fitz.open(str(pdf_path))
+        self._total_pages = len(self._doc)
+        self._page_idx = 0
+        self._set_controls_state("normal")
+        self._render()
+
+    def goto_page(self, page_num: int) -> None:
+        """Jump to a 1-based page number."""
+        if self._doc is None:
+            return
+        idx = max(0, min(page_num - 1, self._total_pages - 1))
+        self._page_idx = idx
+        self._render()
+
+    def clear(self) -> None:
+        if self._doc is not None:
+            self._doc.close()
+            self._doc = None
+        self._total_pages = 0
+        self._page_idx = 0
+        self._photo = None
+        self._canvas.delete("page")
+        self._set_controls_state("disabled")
+        self._page_label.configure(text="–")
+        # Show placeholder
+        self._canvas.itemconfigure("placeholder", state="normal")
+
+    def _render(self) -> None:
+        if not _PDF_PREVIEW_AVAILABLE or self._doc is None:
+            return
+        self._canvas.itemconfigure("placeholder", state="hidden")
+        w = self._canvas.winfo_width()
+        if w < 10:
+            w = 400
+
+        page = self._doc[self._page_idx]
+        zoom = w / page.rect.width
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        self._photo = ImageTk.PhotoImage(img)
+
+        self._canvas.delete("page")
+        self._canvas.create_image(0, 0, anchor="nw", image=self._photo, tags="page")
+        self._canvas.configure(scrollregion=(0, 0, pix.width, pix.height))
+        self._canvas.yview_moveto(0)
+
+        self._page_label.configure(text=f"{self._page_idx + 1} / {self._total_pages}")
+
+    def _prev(self) -> None:
+        if self._doc is None or self._page_idx <= 0:
+            return
+        self._page_idx -= 1
+        self._render()
+
+    def _next(self) -> None:
+        if self._doc is None or self._page_idx >= self._total_pages - 1:
+            return
+        self._page_idx += 1
+        self._render()
+
+    def _jump_to_entered(self, _event=None) -> None:
+        try:
+            num = int(self._page_entry.get().strip())
+        except ValueError:
+            return
+        self._page_entry.delete(0, "end")
+        self.goto_page(num)
+
+    def _set_controls_state(self, state: str) -> None:
+        self._prev_btn.configure(state=state)
+        self._next_btn.configure(state=state)
+        self._page_entry.configure(state=state)
 
 
 class SegmentEditor(ctk.CTkFrame):
