@@ -67,7 +67,7 @@ class SourcesTab(ctk.CTkFrame):
         right = ctk.CTkFrame(self)
         right.grid(row=0, column=1, sticky="nsew", padx=(4, 4), pady=8)
         right.columnconfigure(0, weight=1)
-        right.rowconfigure(3, weight=1)
+        right.rowconfigure(4, weight=1)
 
         self._detail_frame = right
         ctk.CTkLabel(right, text="Szczegóły pliku", font=ctk.CTkFont(size=15, weight="bold")).grid(
@@ -96,9 +96,28 @@ class SourcesTab(ctk.CTkFrame):
             graphic_row, text="Zapisz", command=self._save_graphic_pages, width=80
         ).pack(side="left", padx=4)
 
+        # Extraction method row
+        method_row = ctk.CTkFrame(right, fg_color="transparent")
+        method_row.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
+        ctk.CTkLabel(method_row, text="Metoda ekstrakcji:").pack(side="left", padx=(0, 6))
+        self._extraction_method_btn = ctk.CTkSegmentedButton(
+            method_row,
+            values=["pdfplumber", "marker"],
+            command=self._save_extraction_method,
+            width=200,
+        )
+        self._extraction_method_btn.set("pdfplumber")
+        self._extraction_method_btn.pack(side="left", padx=4)
+        ctk.CTkLabel(
+            method_row,
+            text="(marker = lepsza jakość + wyciąga obrazki)",
+            text_color=("gray50", "gray60"),
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=6)
+
         # Segments section
         seg_frame = ctk.CTkFrame(right)
-        seg_frame.grid(row=3, column=0, sticky="nsew", padx=8, pady=(4, 8))
+        seg_frame.grid(row=4, column=0, sticky="nsew", padx=8, pady=(4, 8))
         seg_frame.columnconfigure(0, weight=1)
         seg_frame.rowconfigure(1, weight=1)
 
@@ -178,6 +197,7 @@ class SourcesTab(ctk.CTkFrame):
         self._display_name_entry.insert(0, src.display_name)
         self._graphic_pages_entry.delete(0, "end")
         self._graphic_pages_entry.insert(0, ", ".join(str(p) for p in src.graphic_pages))
+        self._extraction_method_btn.set(src.extraction_method)
         self._seg_editor.clear()
         self._refresh_seg_list(src)
         # Load PDF in viewer
@@ -190,6 +210,7 @@ class SourcesTab(ctk.CTkFrame):
     def _clear_details(self) -> None:
         self._display_name_entry.delete(0, "end")
         self._graphic_pages_entry.delete(0, "end")
+        self._extraction_method_btn.set("pdfplumber")
         for w in self._seg_list.winfo_children():
             w.destroy()
         self._seg_editor.clear()
@@ -202,6 +223,11 @@ class SourcesTab(ctk.CTkFrame):
             self._sm.rename_source(self._selected_source_id, name)
             self._refresh_source_list()
             self._refresh_cb()
+
+    def _save_extraction_method(self, method: str) -> None:
+        if not self._selected_source_id:
+            return
+        self._sm.set_extraction_method(self._selected_source_id, method)
 
     def _save_graphic_pages(self) -> None:
         if not self._selected_source_id:

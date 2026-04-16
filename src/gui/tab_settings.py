@@ -81,6 +81,26 @@ class SettingsTab(ctk.CTkFrame):
         )
 
         row += 1
+        ctk.CTkLabel(
+            self,
+            text="Równoległe operacje AI (workers):",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(8, 2))
+
+        row += 1
+        workers_row = ctk.CTkFrame(self, fg_color="transparent")
+        workers_row.grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 4))
+        ctk.CTkLabel(workers_row, text="Marker workers (1–16):").pack(side="left", padx=(0, 8))
+        self._marker_workers_entry = ctk.CTkEntry(workers_row, width=70)
+        self._marker_workers_entry.pack(side="left", padx=4)
+        ctk.CTkLabel(
+            workers_row,
+            text="(domyślnie 4; więcej = szybciej ale więcej RAM/GPU)",
+            text_color=("gray50", "gray60"),
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=6)
+
+        row += 1
         save_btn = ctk.CTkButton(self, text="Zapisz ustawienia", command=self._save)
         save_btn.grid(row=row, column=0, columnspan=2, pady=(8, 8))
 
@@ -113,6 +133,9 @@ class SettingsTab(ctk.CTkFrame):
         self._quote_prompt.delete("1.0", "end")
         self._quote_prompt.insert("1.0", s.prompts.quote_extraction)
 
+        self._marker_workers_entry.delete(0, "end")
+        self._marker_workers_entry.insert(0, str(s.marker_workers))
+
     def _save(self) -> None:
         api_key = self._api_key_entry.get().strip()
         model = self._model_var.get()
@@ -123,9 +146,20 @@ class SettingsTab(ctk.CTkFrame):
         self._sm.set_default_model(model)
         self._sm.update_prompts(graphic_description=graphic, quote_extraction=quote)
 
-        # Update the live AIService with new API key
+        # Marker workers
+        try:
+            workers = int(self._marker_workers_entry.get().strip())
+            workers = max(1, min(workers, 16))
+        except ValueError:
+            workers = 4
+        self._sm.set_marker_workers(workers)
+        self._marker_workers_entry.delete(0, "end")
+        self._marker_workers_entry.insert(0, str(workers))
+
+        # Update the live AIService with new API key and concurrency
         if self._ai_ref:
             self._ai_ref[0].update_api_key(api_key)
+            self._ai_ref[0].update_max_concurrent(workers)
 
     def _clear_data(self) -> None:
         dialog = _ConfirmClearDialog(self)

@@ -59,6 +59,7 @@ class Source:
     segments: list[Segment] = field(default_factory=list)
     graphic_pages: list[int] = field(default_factory=list)
     processing_status: ProcessingStatus = field(default_factory=ProcessingStatus)
+    extraction_method: str = "pdfplumber"  # "pdfplumber" | "marker"
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +69,7 @@ class Source:
             "segments": [s.to_dict() for s in self.segments],
             "graphic_pages": self.graphic_pages,
             "processing_status": self.processing_status.to_dict(),
+            "extraction_method": self.extraction_method,
         }
 
     @classmethod
@@ -81,6 +83,7 @@ class Source:
             processing_status=ProcessingStatus.from_dict(
                 d.get("processing_status", {})
             ),
+            extraction_method=d.get("extraction_method", "pdfplumber"),
         )
 
 
@@ -150,6 +153,7 @@ class ProjectState:
     sources: list[Source] = field(default_factory=list)
     questions: list[Question] = field(default_factory=list)
     prompts: Prompts = field(default_factory=Prompts)
+    marker_workers: int = 4
 
     def to_dict(self) -> dict:
         return {
@@ -158,6 +162,7 @@ class ProjectState:
             "sources": [s.to_dict() for s in self.sources],
             "questions": [q.to_dict() for q in self.questions],
             "prompts": self.prompts.to_dict(),
+            "marker_workers": self.marker_workers,
         }
 
     @classmethod
@@ -168,6 +173,7 @@ class ProjectState:
             sources=[Source.from_dict(s) for s in d.get("sources", [])],
             questions=[Question.from_dict(q) for q in d.get("questions", [])],
             prompts=Prompts.from_dict(d.get("prompts", {})),
+            marker_workers=d.get("marker_workers", 4),
         )
 
 

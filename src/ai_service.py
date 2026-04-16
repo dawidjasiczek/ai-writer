@@ -12,7 +12,7 @@ from openai import OpenAI
 
 from .models import Question, FragmentResult, Quote, SegmentAnalysisResult
 
-# Max concurrent AI calls
+# Default max concurrent AI calls (can be overridden per AIService instance)
 MAX_CONCURRENT = 4
 
 # Approximate token limit thresholds per model (conservative)
@@ -129,11 +129,14 @@ def _merge_fragment_results(all_results: list[dict]) -> dict:
 
 
 class AIService:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, max_concurrent: int = MAX_CONCURRENT) -> None:
         self._api_key = api_key
         self._client: Optional[OpenAI] = None
-        self._semaphore = threading.Semaphore(MAX_CONCURRENT)
-        self._executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT, thread_name_prefix="ai_worker")
+        self._max_concurrent = max(1, max_concurrent)
+        self._semaphore = threading.Semaphore(self._max_concurrent)
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._max_concurrent, thread_name_prefix="ai_worker"
+        )
 
     def _get_client(self) -> OpenAI:
         if self._client is None or self._client.api_key != self._api_key:
@@ -143,6 +146,19 @@ class AIService:
     def update_api_key(self, api_key: str) -> None:
         self._api_key = api_key
         self._client = None
+
+    def update_max_concurrent(self, max_concurrent: int) -> None:
+        """Rebuild executor/semaphore with new concurrency limit."""
+        new_val = max(1, max_concurrent)
+        if new_val == self._max_concurrent:
+            return
+        old_executor = self._executor
+        old_executor.shutdown(wait=False)
+        self._max_concurrent = new_val
+        self._semaphore = threading.Semaphore(new_val)
+        self._executor = ThreadPoolExecutor(
+            max_workers=new_val, thread_name_prefix="ai_worker"
+        )
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False)
@@ -178,6 +194,65 @@ class AIService:
                                 {
                                     "type": "input_image",
                                     "image_url": f"data:image/png;base64,{b64}",
+                                },
+                            ],
+                        }
+                    ],
+                )
+                return response.output_text
+
+        def _wrapped():
+            try:
+                result = _run()
+                if on_done:
+                    on_done(result, None)
+                return result
+            except Exception as exc:
+                if on_done:
+                    on_done("", exc)
+                raise
+
+        return self._executor.submit(_wrapped)
+
+    def describe_extracted_image(
+        self,
+        image_path: Path,
+        model: str,
+        system_prompt: str,
+        on_done: Optional[Callable[[str, Optional[Exception]], None]] = None,
+    ) -> Future:
+        """
+        Describe a single figure/chart image extracted by Marker.
+        Works with .jpeg or .png files.  The user message is tailored for
+        individual figures rather than full pages.
+        """
+        ext = image_path.suffix.lower().lstrip(".")
+        mime = "image/jpeg" if ext in ("jpg", "jpeg") else "image/png"
+
+        def _run() -> str:
+            with self._semaphore:
+                with open(image_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+
+                client = self._get_client()
+                response = client.responses.create(
+                    model=model,
+                    instructions=system_prompt,
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": (
+                                        "Opisz dokładnie zawartość tego obrazka/wykresu/rysunku: "
+                                        "co przedstawia, jakie dane zawiera, etykiety, osie, legendy, "
+                                        "kluczowe wartości liczbowe i wnioski które z niego wynikają."
+                                    ),
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:{mime};base64,{b64}",
                                 },
                             ],
                         }

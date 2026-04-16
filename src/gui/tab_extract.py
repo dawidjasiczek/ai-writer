@@ -1,6 +1,7 @@
 """Extract tab: text extraction (step 5), graphic description (step 6), placeholder fill (step 7)."""
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 from tkinter import messagebox
@@ -10,6 +11,15 @@ import customtkinter as ctk
 
 from ..state_manager import StateManager
 from ..pdf_service import extract_segment_text, render_page_to_image, fill_placeholders
+from ..marker_service import (
+    run_marker_extraction,
+    split_marker_text_into_segment,
+    normalize_marker_page_markers,
+    find_image_refs_for_pages,
+    replace_image_refs_with_descriptions,
+    strip_remaining_image_refs,
+    delete_marker_images,
+)
 from ..ai_service import AIService
 from .components import SegmentSelector, StatusBar
 
@@ -123,7 +133,13 @@ class ExtractTab(ctk.CTkFrame):
         def worker():
             errors = []
             done = 0
+
+            # Group selection by source to run Marker once per source
+            sources_selected: dict[str, list] = {}
             for src_id, seg_id in selection:
+                sources_selected.setdefault(src_id, []).append(seg_id)
+
+            for src_id, seg_ids in sources_selected.items():
                 src = self._sm.get_source(src_id)
                 if src is None:
                     continue
@@ -132,20 +148,67 @@ class ExtractTab(ctk.CTkFrame):
                     errors.append(f"{src.display_name}: brak pliku PDF")
                     continue
 
-                segs = src.segments if seg_id is None else [self._sm.get_segment(src_id, seg_id)]
-                segs = [s for s in segs if s is not None]
+                # Collect the actual Segment objects
+                all_segs = []
+                for seg_id in seg_ids:
+                    if seg_id is None:
+                        all_segs.extend(src.segments)
+                    else:
+                        seg = self._sm.get_segment(src_id, seg_id)
+                        if seg:
+                            all_segs.append(seg)
+                # Deduplicate while preserving order
+                seen_seg_ids: set[str] = set()
+                segs = []
+                for s in all_segs:
+                    if s.id not in seen_seg_ids:
+                        seen_seg_ids.add(s.id)
+                        segs.append(s)
 
-                for seg in segs:
-                    try:
-                        self._update_progress_label(f"{src.display_name} / {seg.name}")
-                        text = extract_segment_text(
-                            pdf_path, seg.start_page, seg.end_page, src.graphic_pages
-                        )
-                        out_path = self._sm.raw_text_path(src_id, seg.id)
-                        out_path.write_text(text, encoding="utf-8")
-                        done += 1
-                    except Exception as e:
-                        errors.append(f"{src.display_name}/{seg.name}: {e}")
+                if src.extraction_method == "marker":
+                    # --- MARKER path ---
+                    marker_dir = self._sm.marker_output_dir(src_id)
+
+                    for seg in segs:
+                        try:
+                            self._update_progress_label(f"{src.display_name} / {seg.name}")
+                            # IMPORTANT: process only the selected segment pages.
+                            # Marker expects 0-based page ranges.
+                            page_range = f"{seg.start_page - 1}-{seg.end_page - 1}"
+                            workers_count = self._sm.state.marker_workers
+                            markdown_text, _ = run_marker_extraction(
+                                pdf_path,
+                                marker_dir,
+                                workers=workers_count,
+                                page_range=page_range,
+                            )
+                            text = split_marker_text_into_segment(
+                                markdown_text,
+                                seg.start_page,
+                                seg.end_page,
+                            )
+                            # Extra safety: normalize any marker pagination
+                            # delimiters that may leak through.
+                            text = normalize_marker_page_markers(text)
+                            out_path = self._sm.raw_text_path(src_id, seg.id)
+                            out_path.write_text(text, encoding="utf-8")
+                            done += 1
+                        except Exception as e:
+                            errors.append(f"{src.display_name}/{seg.name}: {e}")
+
+                else:
+                    # --- pdfplumber path (unchanged) ---
+                    for seg in segs:
+                        try:
+                            self._update_progress_label(f"{src.display_name} / {seg.name}")
+                            text = extract_segment_text(
+                                pdf_path, seg.start_page, seg.end_page, src.graphic_pages
+                            )
+                            out_path = self._sm.raw_text_path(src_id, seg.id)
+                            out_path.write_text(text, encoding="utf-8")
+                            done += 1
+                        except Exception as e:
+                            errors.append(f"{src.display_name}/{seg.name}: {e}")
 
             if any(s.processing_status.text_extracted is False for s in self._sm.state.sources):
                 for src_id2, _ in selection:
@@ -173,76 +236,153 @@ class ExtractTab(ctk.CTkFrame):
             messagebox.showinfo("Info", "Wybierz co najmniej jeden segment / plik.")
             return
 
-        # Collect unique (source_id, page_num) pairs
-        pages_to_describe: list[tuple[str, int]] = []
-        seen: set[tuple[str, int]] = set()
-        for src_id, seg_id in selection:
-            src = self._sm.get_source(src_id)
-            if src is None:
-                continue
-            segs = src.segments if seg_id is None else [self._sm.get_segment(src_id, seg_id)]
-            segs = [s for s in segs if s is not None]
-            for seg in segs:
-                for pg in src.graphic_pages:
-                    if seg.start_page <= pg <= seg.end_page:
-                        key = (src_id, pg)
-                        if key not in seen:
-                            seen.add(key)
-                            pages_to_describe.append(key)
-
-        if not pages_to_describe:
-            messagebox.showinfo("Info", "Brak stron graficznych w wybranych segmentach.")
-            return
-
         self._start_progress("Opisywanie stron graficznych...")
         model = self._sm.state.default_model
         prompt = self._sm.state.prompts.graphic_description
+        ai = self._ai_ref[0]
 
         def worker():
             errors = []
             done = 0
-            total = len(pages_to_describe)
 
-            import concurrent.futures
-            futures = []
-            ai = self._ai_ref[0]
+            # Split selection by source and method
+            sources_selected: dict[str, list] = {}
+            for src_id, seg_id in selection:
+                sources_selected.setdefault(src_id, []).append(seg_id)
 
-            for src_id, page_num in pages_to_describe:
+            # --- MARKER path: describe individual extracted images ---
+            # --- pdfplumber path: render full pages and describe them ---
+
+            all_futures = []
+
+            for src_id, seg_ids in sources_selected.items():
                 src = self._sm.get_source(src_id)
-                pdf_path = self._sm.get_source_pdf_path(src_id)
-                if pdf_path is None or not pdf_path.exists():
-                    errors.append(f"Brak PDF: {src_id}")
+                if src is None:
                     continue
 
-                img_path = self._sm.graphic_image_path(src_id, page_num)
-                desc_path = self._sm.graphic_description_path(src_id, page_num)
-
-                try:
-                    render_page_to_image(pdf_path, page_num, img_path)
-                except Exception as e:
-                    errors.append(f"Błąd renderowania strony {page_num}: {e}")
-                    continue
-
-                def _cb(result: str, exc, _src_id=src_id, _pg=page_num, _desc_path=desc_path):
-                    nonlocal done
-                    if exc:
-                        errors.append(f"AI błąd strona {_pg}: {exc}")
+                # Collect segments
+                all_segs = []
+                for seg_id in seg_ids:
+                    if seg_id is None:
+                        all_segs.extend(src.segments)
                     else:
-                        _desc_path.write_text(result, encoding="utf-8")
-                        done += 1
-                    self._update_progress_label(f"{done}/{total} stron opisanych")
+                        seg = self._sm.get_segment(src_id, seg_id)
+                        if seg:
+                            all_segs.append(seg)
+                seen_seg_ids: set[str] = set()
+                segs = []
+                for s in all_segs:
+                    if s.id not in seen_seg_ids:
+                        seen_seg_ids.add(s.id)
+                        segs.append(s)
 
-                future = ai.describe_graphic_page(img_path, model, prompt, on_done=_cb)
-                futures.append(future)
+                if src.extraction_method == "marker":
+                    # Collect all image filenames that appear in raw text for graphic pages
+                    marker_dir = self._sm.marker_output_dir(src_id)
+                    seen_images: set[str] = set()
 
-            # Wait for all
-            for fut in futures:
+                    for seg in segs:
+                        raw_path = self._sm.raw_text_path(src_id, seg.id)
+                        if not raw_path.exists():
+                            continue
+                        raw_text = raw_path.read_text(encoding="utf-8")
+                        img_refs = find_image_refs_for_pages(raw_text, src.graphic_pages)
+
+                        for img_filename, page_1based in img_refs:
+                            if img_filename in seen_images:
+                                continue
+                            seen_images.add(img_filename)
+
+                            img_path = marker_dir / img_filename
+                            if not img_path.exists():
+                                errors.append(
+                                    f"{src.display_name} strona {page_1based}: "
+                                    f"brak pliku obrazka {img_filename}"
+                                )
+                                continue
+
+                            # Description saved per-image (reuse graphic_description_path pattern)
+                            desc_path = marker_dir / (img_filename + "_description.txt")
+
+                            def _cb(
+                                result: str,
+                                exc,
+                                _desc_path=desc_path,
+                                _img_filename=img_filename,
+                                _page=page_1based,
+                            ):
+                                nonlocal done
+                                if exc:
+                                    errors.append(
+                                        f"AI błąd {_img_filename}: {exc}"
+                                    )
+                                else:
+                                    _desc_path.write_text(result, encoding="utf-8")
+                                    done += 1
+                                self._update_progress_label(f"Opisano {done} obrazków...")
+
+                            future = ai.describe_extracted_image(img_path, model, prompt, on_done=_cb)
+                            all_futures.append(future)
+
+                else:
+                    # pdfplumber path: render whole page
+                    pdf_path = self._sm.get_source_pdf_path(src_id)
+                    if pdf_path is None or not pdf_path.exists():
+                        errors.append(f"Brak PDF: {src_id}")
+                        continue
+
+                    seen_pages: set[tuple[str, int]] = set()
+                    for seg in segs:
+                        for pg in src.graphic_pages:
+                            if seg.start_page <= pg <= seg.end_page:
+                                key = (src_id, pg)
+                                if key in seen_pages:
+                                    continue
+                                seen_pages.add(key)
+
+                                img_path = self._sm.graphic_image_path(src_id, pg)
+                                desc_path = self._sm.graphic_description_path(src_id, pg)
+
+                                try:
+                                    render_page_to_image(pdf_path, pg, img_path)
+                                except Exception as e:
+                                    errors.append(f"Błąd renderowania strony {pg}: {e}")
+                                    continue
+
+                                def _cb(
+                                    result: str,
+                                    exc,
+                                    _src_id=src_id,
+                                    _pg=pg,
+                                    _desc_path=desc_path,
+                                ):
+                                    nonlocal done
+                                    if exc:
+                                        errors.append(f"AI błąd strona {_pg}: {exc}")
+                                    else:
+                                        _desc_path.write_text(result, encoding="utf-8")
+                                        done += 1
+                                    self._update_progress_label(f"Opisano {done} stron...")
+
+                                future = ai.describe_graphic_page(img_path, model, prompt, on_done=_cb)
+                                all_futures.append(future)
+
+            if not all_futures:
+                def no_work():
+                    self._stop_progress()
+                    messagebox.showinfo("Info", "Brak stron graficznych / obrazków w wybranych segmentach.")
+                self.after(0, no_work)
+                return
+
+            total = len(all_futures)
+            self._update_progress_label(f"0/{total} opisanych...")
+
+            for fut in all_futures:
                 try:
                     fut.result()
                 except Exception:
                     pass
 
-            # Mark status
             for src_id2, _ in selection:
                 self._sm.mark_graphics_described(src_id2)
 
@@ -251,7 +391,7 @@ class ExtractTab(ctk.CTkFrame):
                 if errors:
                     messagebox.showerror("Błędy", "\n".join(errors))
                 else:
-                    self._set_status(f"Opisano {done} stron graficznych.")
+                    self._set_status(f"Opisano {done} obrazków/stron graficznych.")
 
             self.after(0, finish)
 
@@ -271,38 +411,97 @@ class ExtractTab(ctk.CTkFrame):
         def worker():
             errors = []
             done = 0
+
+            sources_selected: dict[str, list] = {}
             for src_id, seg_id in selection:
+                sources_selected.setdefault(src_id, []).append(seg_id)
+
+            for src_id, seg_ids in sources_selected.items():
                 src = self._sm.get_source(src_id)
                 if src is None:
                     continue
 
-                segs = src.segments if seg_id is None else [self._sm.get_segment(src_id, seg_id)]
-                segs = [s for s in segs if s is not None]
+                all_segs = []
+                for seg_id in seg_ids:
+                    if seg_id is None:
+                        all_segs.extend(src.segments)
+                    else:
+                        seg = self._sm.get_segment(src_id, seg_id)
+                        if seg:
+                            all_segs.append(seg)
+                seen_seg_ids: set[str] = set()
+                segs = []
+                for s in all_segs:
+                    if s.id not in seen_seg_ids:
+                        seen_seg_ids.add(s.id)
+                        segs.append(s)
 
-                # Load descriptions for this source
-                descriptions: dict[int, str] = {}
-                for pg in src.graphic_pages:
-                    desc_path = self._sm.graphic_description_path(src_id, pg)
-                    if desc_path.exists():
-                        descriptions[pg] = desc_path.read_text(encoding="utf-8")
+                if src.extraction_method == "marker":
+                    # --- MARKER path ---
+                    marker_dir = self._sm.marker_output_dir(src_id)
 
-                for seg in segs:
-                    raw_path = self._sm.raw_text_path(src_id, seg.id)
-                    if not raw_path.exists():
-                        errors.append(
-                            f"{src.display_name}/{seg.name}: brak wyciągniętego tekstu (uruchom krok 1)"
-                        )
-                        continue
-                    try:
-                        raw_text = raw_path.read_text(encoding="utf-8")
-                        filled = fill_placeholders(raw_text, descriptions)
-                        out_path = self._sm.full_text_path(src_id, seg.id)
-                        out_path.write_text(filled, encoding="utf-8")
-                        done += 1
-                    except Exception as e:
-                        errors.append(f"{src.display_name}/{seg.name}: {e}")
+                    for seg in segs:
+                        raw_path = self._sm.raw_text_path(src_id, seg.id)
+                        if not raw_path.exists():
+                            errors.append(
+                                f"{src.display_name}/{seg.name}: brak wyciągniętego tekstu (uruchom krok 1)"
+                            )
+                            continue
+                        try:
+                            raw_text = raw_path.read_text(encoding="utf-8")
 
-                self._sm.mark_placeholders_filled(src_id)
+                            # Build descriptions map: image_filename -> description
+                            img_refs = find_image_refs_for_pages(raw_text, src.graphic_pages)
+                            descriptions: dict[str, str] = {}
+                            for img_filename, _ in img_refs:
+                                desc_path = marker_dir / (img_filename + "_description.txt")
+                                if desc_path.exists():
+                                    descriptions[img_filename] = desc_path.read_text(encoding="utf-8")
+
+                            # Replace described images, strip the rest
+                            filled = replace_image_refs_with_descriptions(raw_text, descriptions)
+                            filled = strip_remaining_image_refs(filled)
+
+                            out_path = self._sm.full_text_path(src_id, seg.id)
+                            out_path.write_text(filled, encoding="utf-8")
+                            done += 1
+
+                            # Clean up: delete all image files referenced in this segment
+                            all_filenames = re.findall(
+                                r"!\[\]\((_page_\d+_[^)]+\.jpe?g)\)", raw_text
+                            )
+                            delete_marker_images(marker_dir, all_filenames)
+
+                        except Exception as e:
+                            errors.append(f"{src.display_name}/{seg.name}: {e}")
+
+                    self._sm.mark_placeholders_filled(src_id)
+
+                else:
+                    # --- pdfplumber path (unchanged) ---
+                    descriptions_plumber: dict[int, str] = {}
+                    for pg in src.graphic_pages:
+                        desc_path = self._sm.graphic_description_path(src_id, pg)
+                        if desc_path.exists():
+                            descriptions_plumber[pg] = desc_path.read_text(encoding="utf-8")
+
+                    for seg in segs:
+                        raw_path = self._sm.raw_text_path(src_id, seg.id)
+                        if not raw_path.exists():
+                            errors.append(
+                                f"{src.display_name}/{seg.name}: brak wyciągniętego tekstu (uruchom krok 1)"
+                            )
+                            continue
+                        try:
+                            raw_text = raw_path.read_text(encoding="utf-8")
+                            filled = fill_placeholders(raw_text, descriptions_plumber)
+                            out_path = self._sm.full_text_path(src_id, seg.id)
+                            out_path.write_text(filled, encoding="utf-8")
+                            done += 1
+                        except Exception as e:
+                            errors.append(f"{src.display_name}/{seg.name}: {e}")
+
+                    self._sm.mark_placeholders_filled(src_id)
 
             def finish():
                 self._stop_progress()

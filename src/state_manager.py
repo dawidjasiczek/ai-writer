@@ -144,6 +144,13 @@ class StateManager:
             src.graphic_pages = sorted(set(pages))
             self.save()
 
+    def set_extraction_method(self, source_id: str, method: str) -> None:
+        """Set extraction method for a source: 'pdfplumber' or 'marker'."""
+        src = self.get_source(source_id)
+        if src:
+            src.extraction_method = method
+            self.save()
+
     # ------------------------------------------------------------------
     # Processing status
     # ------------------------------------------------------------------
@@ -214,6 +221,10 @@ class StateManager:
                 setattr(self.state.prompts, k, v)
         self.save()
 
+    def set_marker_workers(self, workers: int) -> None:
+        self.state.marker_workers = max(1, workers)
+        self.save()
+
     # ------------------------------------------------------------------
     # Output path helpers
     # ------------------------------------------------------------------
@@ -223,6 +234,7 @@ class StateManager:
         (base / "segments").mkdir(parents=True, exist_ok=True)
         (base / "graphics").mkdir(parents=True, exist_ok=True)
         (base / "analysis").mkdir(parents=True, exist_ok=True)
+        (base / "marker").mkdir(parents=True, exist_ok=True)
 
     def raw_text_path(self, source_id: str, segment_id: str) -> Path:
         self._ensure_source_dirs(source_id)
@@ -248,6 +260,11 @@ class StateManager:
 
     def source_quotes_path(self, source_id: str) -> Path:
         return self.project_dir / "output" / source_id / "source_quotes.json"
+
+    def marker_output_dir(self, source_id: str) -> Path:
+        """Directory where Marker stores its extracted markdown and images."""
+        self._ensure_source_dirs(source_id)
+        return self.project_dir / "output" / source_id / "marker"
 
     def question_aggregated_json_path(self, question_id: int) -> Path:
         return self.project_dir / "output" / "aggregated" / f"question_{question_id}_all.json"
