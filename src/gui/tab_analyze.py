@@ -205,6 +205,13 @@ class AnalyzeTab(ctk.CTkFrame):
 
 def _save_segment_result(sm: StateManager, src, seg, raw_result: dict) -> None:
     """Save per-segment JSON and update source-level aggregation."""
+    fragments = raw_result.get("fragments", [])
+    if src.single_segment:
+        for frag in fragments:
+            for q in frag.get("quotes", []):
+                q["page"] = 1
+                q["page_end"] = None
+
     result = SegmentAnalysisResult(
         source_id=src.id,
         source_display_name=src.display_name,
@@ -217,7 +224,7 @@ def _save_segment_result(sm: StateManager, src, seg, raw_result: dict) -> None:
                 fragment_summary=f.get("fragment_summary", ""),
                 quotes=[Quote(**q) for q in f.get("quotes", [])],
             )
-            for f in raw_result.get("fragments", [])
+            for f in fragments
         ],
     )
     # Per-segment file

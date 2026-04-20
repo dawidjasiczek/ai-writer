@@ -151,6 +151,12 @@ class StateManager:
             src.extraction_method = method
             self.save()
 
+    def set_single_segment(self, source_id: str, value: bool) -> None:
+        src = self.get_source(source_id)
+        if src:
+            src.single_segment = value
+            self.save()
+
     # ------------------------------------------------------------------
     # Processing status
     # ------------------------------------------------------------------

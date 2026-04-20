@@ -67,7 +67,7 @@ class SourcesTab(ctk.CTkFrame):
         right = ctk.CTkFrame(self)
         right.grid(row=0, column=1, sticky="nsew", padx=(4, 4), pady=8)
         right.columnconfigure(0, weight=1)
-        right.rowconfigure(4, weight=1)
+        right.rowconfigure(5, weight=1)
 
         self._detail_frame = right
         ctk.CTkLabel(right, text="Szczegóły pliku", font=ctk.CTkFont(size=15, weight="bold")).grid(
@@ -115,9 +115,20 @@ class SourcesTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=6)
 
+        single_seg_row = ctk.CTkFrame(right, fg_color="transparent")
+        single_seg_row.grid(row=4, column=0, sticky="ew", padx=8, pady=2)
+        self._single_segment_var = ctk.BooleanVar(value=False)
+        self._single_segment_chk = ctk.CTkCheckBox(
+            single_seg_row,
+            text="Całe źródło jako jeden segment (bez podziału na strony)",
+            variable=self._single_segment_var,
+            command=self._on_single_segment_toggle,
+        )
+        self._single_segment_chk.pack(side="left", padx=(0, 4))
+
         # Segments section
         seg_frame = ctk.CTkFrame(right)
-        seg_frame.grid(row=4, column=0, sticky="nsew", padx=8, pady=(4, 8))
+        seg_frame.grid(row=5, column=0, sticky="nsew", padx=8, pady=(4, 8))
         seg_frame.columnconfigure(0, weight=1)
         seg_frame.rowconfigure(1, weight=1)
 
@@ -126,7 +137,10 @@ class SourcesTab(ctk.CTkFrame):
         ctk.CTkLabel(seg_header, text="Segmenty", font=ctk.CTkFont(weight="bold")).pack(
             side="left"
         )
-        ctk.CTkButton(seg_header, text="+ Dodaj segment", command=self._add_segment, width=130).pack(
+        self._add_seg_btn = ctk.CTkButton(
+            seg_header, text="+ Dodaj segment", command=self._add_segment, width=130
+        )
+        self._add_seg_btn.pack(
             side="right"
         )
 
@@ -198,6 +212,8 @@ class SourcesTab(ctk.CTkFrame):
         self._graphic_pages_entry.delete(0, "end")
         self._graphic_pages_entry.insert(0, ", ".join(str(p) for p in src.graphic_pages))
         self._extraction_method_btn.set(src.extraction_method)
+        self._single_segment_var.set(src.single_segment)
+        self._set_single_segment_ui_state(src.single_segment)
         self._seg_editor.clear()
         self._refresh_seg_list(src)
         # Load PDF in viewer
@@ -211,6 +227,8 @@ class SourcesTab(ctk.CTkFrame):
         self._display_name_entry.delete(0, "end")
         self._graphic_pages_entry.delete(0, "end")
         self._extraction_method_btn.set("pdfplumber")
+        self._single_segment_var.set(False)
+        self._set_single_segment_ui_state(False)
         for w in self._seg_list.winfo_children():
             w.destroy()
         self._seg_editor.clear()
@@ -241,6 +259,54 @@ class SourcesTab(ctk.CTkFrame):
                 messagebox.showerror("Błąd", "Podaj numery stron oddzielone przecinkami.")
                 return
         self._sm.set_graphic_pages(self._selected_source_id, pages)
+
+    def _set_single_segment_ui_state(self, enabled: bool) -> None:
+        state = "disabled" if enabled else "normal"
+        self._add_seg_btn.configure(state=state)
+        self._seg_editor.set_enabled(not enabled)
+
+    def _on_single_segment_toggle(self) -> None:
+        if not self._selected_source_id:
+            return
+        src = self._sm.get_source(self._selected_source_id)
+        if src is None:
+            return
+
+        enabled = bool(self._single_segment_var.get())
+
+        if enabled:
+            pdf_path = self._sm.get_source_pdf_path(src.id)
+            if pdf_path is None or not pdf_path.exists():
+                messagebox.showerror("Błąd", "Brak pliku PDF dla wybranego źródła.")
+                self._single_segment_var.set(False)
+                self._set_single_segment_ui_state(False)
+                return
+            try:
+                total_pages = get_pdf_page_count(pdf_path)
+            except Exception as e:
+                messagebox.showerror("Błąd", f"Nie udało się odczytać liczby stron PDF: {e}")
+                self._single_segment_var.set(False)
+                self._set_single_segment_ui_state(False)
+                return
+            if total_pages <= 0:
+                messagebox.showerror("Błąd", "PDF nie zawiera żadnych stron.")
+                self._single_segment_var.set(False)
+                self._set_single_segment_ui_state(False)
+                return
+
+            src.segments = []
+            self._sm.add_segment(src.id, "Całe źródło", 1, total_pages)
+            self._sm.set_single_segment(src.id, True)
+            src = self._sm.get_source(src.id) or src
+            self._selected_seg_id = None
+            self._seg_editor.clear()
+            self._refresh_seg_list(src)
+            self._refresh_cb()
+        else:
+            self._sm.set_single_segment(src.id, False)
+            self._refresh_cb()
+
+        self._set_single_segment_ui_state(enabled)
 
     # ------------------------------------------------------------------
     # Segment management
@@ -470,9 +536,8 @@ class SegmentEditor(ctk.CTkFrame):
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.grid(row=2, column=0, columnspan=4, pady=4)
-        ctk.CTkButton(btn_row, text="Zapisz segment", command=self._save, width=130).pack(
-            side="left", padx=4
-        )
+        self._save_btn = ctk.CTkButton(btn_row, text="Zapisz segment", command=self._save, width=130)
+        self._save_btn.pack(side="left", padx=4)
         self._del_btn = ctk.CTkButton(
             btn_row, text="Usuń", command=self._on_delete, width=80, fg_color="#c0392b"
         )
@@ -495,6 +560,17 @@ class SegmentEditor(ctk.CTkFrame):
         self._start.delete(0, "end")
         self._end.delete(0, "end")
         self._del_btn.configure(state="disabled")
+
+    def set_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        self._name.configure(state=state)
+        self._start.configure(state=state)
+        self._end.configure(state=state)
+        self._save_btn.configure(state=state)
+        if not enabled:
+            self._del_btn.configure(state="disabled")
+        elif self._name.get().strip():
+            self._del_btn.configure(state="normal")
 
     def _save(self) -> None:
         name = self._name.get().strip()

@@ -60,6 +60,7 @@ class Source:
     graphic_pages: list[int] = field(default_factory=list)
     processing_status: ProcessingStatus = field(default_factory=ProcessingStatus)
     extraction_method: str = "pdfplumber"  # "pdfplumber" | "marker"
+    single_segment: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -70,6 +71,7 @@ class Source:
             "graphic_pages": self.graphic_pages,
             "processing_status": self.processing_status.to_dict(),
             "extraction_method": self.extraction_method,
+            "single_segment": self.single_segment,
         }
 
     @classmethod
@@ -84,6 +86,7 @@ class Source:
                 d.get("processing_status", {})
             ),
             extraction_method=d.get("extraction_method", "pdfplumber"),
+            single_segment=d.get("single_segment", False),
         )
 
 

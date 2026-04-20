@@ -200,6 +200,8 @@ class ExtractTab(ctk.CTkFrame):
                             # Extra safety: normalize any marker pagination
                             # delimiters that may leak through.
                             text = normalize_marker_page_markers(text)
+                            if src.single_segment:
+                                text = re.sub(r"\n{0,3}=== \[PAGE \d+\] ===\n{0,3}", "\n\n", text).strip() + "\n"
                             out_path = self._sm.raw_text_path(src_id, seg.id)
                             out_path.write_text(text, encoding="utf-8")
                             done += 1
@@ -214,6 +216,8 @@ class ExtractTab(ctk.CTkFrame):
                             text = extract_segment_text(
                                 pdf_path, seg.start_page, seg.end_page, src.graphic_pages
                             )
+                            if src.single_segment:
+                                text = re.sub(r"\n{0,3}=== \[PAGE \d+\] ===\n{0,3}", "\n\n", text).strip() + "\n"
                             out_path = self._sm.raw_text_path(src_id, seg.id)
                             out_path.write_text(text, encoding="utf-8")
                             done += 1
