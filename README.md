@@ -50,6 +50,12 @@ działa bez błędu, GPU jest poprawnie skonfigurowane.
      i zainstaluje wszystkie zależności.
    - Przy kolejnych uruchomieniach tylko uruchamia aplikację.
    - Skrypt zatrzyma się z czytelnym błędem, jeśli wykryje Python 3.14+.
+   - Skrypt zapyta o profil zależności:
+     - `C` = CUDA/GPU (domyślny, plik `requirements-cuda-windows.txt`)
+     - `Z` = zwykły CPU (plik `requirements.txt`)
+   - Gdy wybierzesz profil CUDA, skrypt wykona sanity check (`torch.cuda.is_available()` + test mnożenia macierzy na GPU).
+     Jeśli test nie przejdzie, automatycznie odinstaluje pakiety `torch/torchvision/torchaudio`
+     i zrobi fallback do profilu CPU (`requirements.txt`).
 
 > Uwaga (Windows): Python 3.14 jest obecnie problematyczny dla części zależności
 > (`Pillow`, `regex`, zależności Markera) i może wymuszać kompilację z C/C++.

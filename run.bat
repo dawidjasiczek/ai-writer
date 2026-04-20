@@ -50,10 +50,23 @@ if not exist venv (
 call venv\Scripts\activate.bat
 
 :: ---------------------------------------------------------------
-:: 5. Install / update requirements
+:: 5. Select requirements profile
 :: ---------------------------------------------------------------
-echo Instalacja/aktualizacja pakietow...
-pip install -r requirements.txt --quiet
+set REQ_FILE=requirements-cuda-windows.txt
+echo.
+echo Wybierz profil zaleznosci:
+echo   [C] CUDA/GPU  ^(domyslny^)
+echo   [Z] Zwykly CPU
+set /p REQ_CHOICE=Twoj wybor [C/Z, Enter=C]:
+if /I "%REQ_CHOICE%"=="Z" (
+    set REQ_FILE=requirements.txt
+)
+
+:: ---------------------------------------------------------------
+:: 6. Install / update requirements
+:: ---------------------------------------------------------------
+echo Instalacja/aktualizacja pakietow z %REQ_FILE%...
+pip install -r %REQ_FILE% --quiet
 if %errorlevel% neq 0 (
     echo BLAD: pip install nie powiodl sie.
     pause
@@ -61,7 +74,34 @@ if %errorlevel% neq 0 (
 )
 
 :: ---------------------------------------------------------------
-:: 6. Run app
+:: 7. CUDA sanity check + automatic fallback to CPU requirements
+:: ---------------------------------------------------------------
+if /I "%REQ_FILE%"=="requirements-cuda-windows.txt" (
+    echo.
+    echo CUDA sanity check...
+    python -c "import sys,torch; assert torch.cuda.is_available(); x=torch.randn(1024,1024,device='cuda'); y=torch.randn(1024,1024,device='cuda'); _=x@y; print(torch.__version__)" >nul 2>nul
+    if %errorlevel% neq 0 (
+        echo UWAGA: CUDA sanity check nie powiodl sie. Przelaczam na profil CPU...
+        echo Usuwanie pakietow torch/vision/audio z nieudanego profilu CUDA...
+        pip uninstall -y torch torchvision torchaudio >nul 2>nul
+        if %errorlevel% neq 0 (
+            echo UWAGA: uninstall torch mogl byc niepelny, kontynuuje fallback...
+        )
+        echo Instalacja profilu CPU ^(requirements.txt^)...
+        pip install -r requirements.txt --quiet
+        if %errorlevel% neq 0 (
+            echo BLAD: fallback do profilu CPU nie powiodl sie.
+            pause
+            exit /b 1
+        )
+        echo Fallback zakonczony - uruchamiam aplikacje na CPU.
+    ) else (
+        echo CUDA sanity check OK - uruchamiam aplikacje na GPU.
+    )
+)
+
+:: ---------------------------------------------------------------
+:: 8. Run app
 :: ---------------------------------------------------------------
 echo Uruchamianie aplikacji...
 python main.py %*
