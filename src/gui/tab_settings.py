@@ -5,7 +5,7 @@ import shutil
 from typing import Callable, Optional
 
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 
 from ..models import AVAILABLE_MODELS
 
@@ -17,12 +17,20 @@ class SettingsTab(ctk.CTkFrame):
         state_manager,
         ai_service_ref: list,
         refresh_callback: Optional[Callable] = None,
+        project_manager=None,
+        current_project_id: Optional[str] = None,
+        switch_project_callback: Optional[Callable] = None,
         **kwargs,
     ):
         super().__init__(master, **kwargs)
         self._sm = state_manager
         self._ai_ref = ai_service_ref
         self._refresh_cb = refresh_callback
+        self._pm = project_manager
+        self._current_project_id = current_project_id
+        self._switch_project_cb = switch_project_callback
+        # {display_name: project_id}
+        self._project_map: dict[str, str] = {}
 
         self._build()
         self._load()
@@ -34,6 +42,51 @@ class SettingsTab(ctk.CTkFrame):
         ctk.CTkLabel(self, text="Ustawienia", font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(16, 8)
         )
+
+        # ---- Project management section (only when ProjectManager is available) ----
+        if self._pm is not None:
+            row += 1
+            ctk.CTkLabel(
+                self,
+                text="Projekty",
+                font=ctk.CTkFont(weight="bold"),
+            ).grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(8, 2))
+
+            row += 1
+            proj_row = ctk.CTkFrame(self, fg_color="transparent")
+            proj_row.grid(row=row, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 4))
+            proj_row.columnconfigure(0, weight=1)
+
+            self._project_var = ctk.StringVar()
+            self._project_combo = ctk.CTkComboBox(
+                proj_row,
+                variable=self._project_var,
+                values=[],
+                width=260,
+                state="readonly",
+            )
+            self._project_combo.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+            ctk.CTkButton(
+                proj_row,
+                text="Przełącz",
+                width=100,
+                command=self._switch_project,
+            ).grid(row=0, column=1, padx=(0, 8))
+
+            ctk.CTkButton(
+                proj_row,
+                text="+ Nowy projekt",
+                width=130,
+                command=self._add_project,
+            ).grid(row=0, column=2)
+
+            self._refresh_project_combo()
+
+            row += 1
+            ctk.CTkFrame(self, height=1, fg_color=("gray70", "gray30")).grid(
+                row=row, column=0, columnspan=2, sticky="ew", padx=16, pady=(4, 8)
+            )
 
         row += 1
         ctk.CTkLabel(self, text="Klucz OpenAI API:").grid(
@@ -133,6 +186,51 @@ class SettingsTab(ctk.CTkFrame):
             fg_color="#c0392b",
             hover_color="#922b21",
         ).grid(row=row, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 16))
+
+    # ------------------------------------------------------------------
+    # Project management helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_project_combo(self) -> None:
+        if self._pm is None:
+            return
+        projects = self._pm.list_projects()
+        self._project_map = {p.name: p.id for p in projects}
+        names = [p.name for p in projects]
+        self._project_combo.configure(values=names)
+        current = next((p.name for p in projects if p.id == self._current_project_id), None)
+        if current:
+            self._project_var.set(current)
+        elif names:
+            self._project_var.set(names[0])
+
+    def _switch_project(self) -> None:
+        if self._pm is None or self._switch_project_cb is None:
+            return
+        selected_name = self._project_var.get()
+        project_id = self._project_map.get(selected_name)
+        if project_id is None or project_id == self._current_project_id:
+            return
+        self._switch_project_cb(project_id)
+
+    def _add_project(self) -> None:
+        if self._pm is None:
+            return
+        name = simpledialog.askstring(
+            "Nowy projekt",
+            "Podaj nazwę nowego projektu:",
+            parent=self,
+        )
+        if not name or not name.strip():
+            return
+        entry = self._pm.add_project(name.strip())
+        self._refresh_project_combo()
+        self._project_var.set(entry.name)
+        if messagebox.askyesno(
+            "Przełączyć projekt?",
+            f'Projekt "{entry.name}" został utworzony.\nCzy chcesz teraz na niego przełączyć?',
+        ):
+            self._switch_project()
 
     def _load(self) -> None:
         s = self._sm.state
