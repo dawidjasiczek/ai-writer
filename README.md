@@ -16,6 +16,29 @@ a następnie ekstrakcję cytatów i podsumowań do zadanych zagadnień tematyczn
   ```
   Na Windows i macOS tkinter jest wbudowany w standardową instalację Pythona.
 
+### GPU (NVIDIA) / PyTorch na Windows
+
+Jeśli chcesz używać Markera na GPU (CUDA), PyTorch musi wspierać architekturę Twojej karty.
+Przy bardzo nowych kartach (np. Blackwell, `sm_120`) stabilne buildy mogą jeszcze nie działać
+i wtedy potrzebny jest nightly build.
+
+Instalacja nightly PyTorch (CUDA 12.8):
+
+```bash
+pip uninstall -y torch torchvision torchaudio
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+```
+
+Weryfikacja:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_capability(0)); print(torch.cuda.get_arch_list())"
+python -c "import torch; x=torch.randn(1024,1024,device='cuda'); y=torch.randn(1024,1024,device='cuda'); print((x@y).mean().item())"
+```
+
+Jeśli `torch.cuda.get_arch_list()` zawiera architekturę Twojej karty (np. `sm_120`) i drugi test
+działa bez błędu, GPU jest poprawnie skonfigurowane.
+
 ---
 
 ## Uruchomienie na Windows (szybki start)
