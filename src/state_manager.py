@@ -231,6 +231,10 @@ class StateManager:
         self.state.marker_workers = max(1, workers)
         self.save()
 
+    def set_gpt_workers(self, workers: int) -> None:
+        self.state.gpt_workers = max(1, workers)
+        self.save()
+
     # ------------------------------------------------------------------
     # Output path helpers
     # ------------------------------------------------------------------

@@ -157,6 +157,7 @@ class ProjectState:
     questions: list[Question] = field(default_factory=list)
     prompts: Prompts = field(default_factory=Prompts)
     marker_workers: int = 4
+    gpt_workers: int = 4
 
     def to_dict(self) -> dict:
         return {
@@ -166,6 +167,7 @@ class ProjectState:
             "questions": [q.to_dict() for q in self.questions],
             "prompts": self.prompts.to_dict(),
             "marker_workers": self.marker_workers,
+            "gpt_workers": self.gpt_workers,
         }
 
     @classmethod
@@ -177,6 +179,7 @@ class ProjectState:
             questions=[Question.from_dict(q) for q in d.get("questions", [])],
             prompts=Prompts.from_dict(d.get("prompts", {})),
             marker_workers=d.get("marker_workers", 4),
+            gpt_workers=d.get("gpt_workers", 4),
         )
 
 

@@ -83,19 +83,32 @@ class SettingsTab(ctk.CTkFrame):
         row += 1
         ctk.CTkLabel(
             self,
-            text="Równoległe operacje AI (workers):",
+            text="Równoległe operacje (workers):",
             font=ctk.CTkFont(weight="bold"),
         ).grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(8, 2))
 
         row += 1
         workers_row = ctk.CTkFrame(self, fg_color="transparent")
         workers_row.grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 4))
-        ctk.CTkLabel(workers_row, text="Marker workers (1–16):").pack(side="left", padx=(0, 8))
-        self._marker_workers_entry = ctk.CTkEntry(workers_row, width=70)
+        ctk.CTkLabel(workers_row, text="Marker / PDF (1–16):").pack(side="left", padx=(0, 8))
+        self._marker_workers_entry = ctk.CTkEntry(workers_row, width=60)
         self._marker_workers_entry.pack(side="left", padx=4)
         ctk.CTkLabel(
             workers_row,
-            text="(domyślnie 4; więcej = szybciej ale więcej RAM/GPU)",
+            text="(więcej = szybciej ale więcej RAM/GPU)",
+            text_color=("gray50", "gray60"),
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=6)
+
+        row += 1
+        gpt_workers_row = ctk.CTkFrame(self, fg_color="transparent")
+        gpt_workers_row.grid(row=row, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 4))
+        ctk.CTkLabel(gpt_workers_row, text="GPT workers (1–16):").pack(side="left", padx=(0, 8))
+        self._gpt_workers_entry = ctk.CTkEntry(gpt_workers_row, width=60)
+        self._gpt_workers_entry.pack(side="left", padx=4)
+        ctk.CTkLabel(
+            gpt_workers_row,
+            text="(ile segmentów/obrazków wysyłanych naraz do API)",
             text_color=("gray50", "gray60"),
             font=ctk.CTkFont(size=11),
         ).pack(side="left", padx=6)
@@ -136,6 +149,9 @@ class SettingsTab(ctk.CTkFrame):
         self._marker_workers_entry.delete(0, "end")
         self._marker_workers_entry.insert(0, str(s.marker_workers))
 
+        self._gpt_workers_entry.delete(0, "end")
+        self._gpt_workers_entry.insert(0, str(s.gpt_workers))
+
     def _save(self) -> None:
         api_key = self._api_key_entry.get().strip()
         model = self._model_var.get()
@@ -148,18 +164,28 @@ class SettingsTab(ctk.CTkFrame):
 
         # Marker workers
         try:
-            workers = int(self._marker_workers_entry.get().strip())
-            workers = max(1, min(workers, 16))
+            marker_workers = int(self._marker_workers_entry.get().strip())
+            marker_workers = max(1, min(marker_workers, 16))
         except ValueError:
-            workers = 4
-        self._sm.set_marker_workers(workers)
+            marker_workers = 4
+        self._sm.set_marker_workers(marker_workers)
         self._marker_workers_entry.delete(0, "end")
-        self._marker_workers_entry.insert(0, str(workers))
+        self._marker_workers_entry.insert(0, str(marker_workers))
+
+        # GPT workers
+        try:
+            gpt_workers = int(self._gpt_workers_entry.get().strip())
+            gpt_workers = max(1, min(gpt_workers, 16))
+        except ValueError:
+            gpt_workers = 4
+        self._sm.set_gpt_workers(gpt_workers)
+        self._gpt_workers_entry.delete(0, "end")
+        self._gpt_workers_entry.insert(0, str(gpt_workers))
 
         # Update the live AIService with new API key and concurrency
         if self._ai_ref:
             self._ai_ref[0].update_api_key(api_key)
-            self._ai_ref[0].update_max_concurrent(workers)
+            self._ai_ref[0].update_max_concurrent(gpt_workers)
 
     def _clear_data(self) -> None:
         dialog = _ConfirmClearDialog(self)

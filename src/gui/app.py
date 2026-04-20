@@ -29,7 +29,12 @@ class App(ctk.CTk):
         self._sm = state_manager
 
         # AIService held in a mutable list so Settings tab can swap it
-        self._ai_ref: list[AIService] = [AIService(state_manager.state.openai_api_key)]
+        self._ai_ref: list[AIService] = [
+            AIService(
+                state_manager.state.openai_api_key,
+                max_concurrent=state_manager.state.gpt_workers,
+            )
+        ]
 
         self._build()
 

@@ -117,8 +117,9 @@ class AnalyzeTab(ctk.CTkFrame):
         def worker():
             errors = []
             done = 0
-            total = len(selection)
 
+            # Collect all tasks first
+            tasks: list[tuple] = []  # (src, seg, segment_text)
             for src_id, seg_id in selection:
                 src = self._sm.get_source(src_id)
                 if src is None:
@@ -130,7 +131,6 @@ class AnalyzeTab(ctk.CTkFrame):
                 segs_to_process = [s for s in segs_to_process if s is not None]
 
                 for seg in segs_to_process:
-                    # Prefer full text (with graphics) if available, else raw
                     full_path = self._sm.full_text_path(src_id, seg.id)
                     raw_path = self._sm.raw_text_path(src_id, seg.id)
                     if full_path.exists():
@@ -145,38 +145,36 @@ class AnalyzeTab(ctk.CTkFrame):
                         continue
 
                     segment_text = text_path.read_text(encoding="utf-8")
+                    tasks.append((src, seg, segment_text))
 
-                    self._log_line(f"  Analizuję: {src.display_name} / {seg.name}...")
-                    self.after(0, lambda s=f"{src.display_name}/{seg.name}": self._progress_label.configure(text=s))
+            total = len(tasks)
 
-                    result_holder = [None]
-                    error_holder = [None]
-                    event = threading.Event()
+            # Dispatch all in parallel (concurrency limited by AIService semaphore)
+            futures: list[tuple] = []  # (future, src, seg)
+            for src, seg, segment_text in tasks:
+                label = f"{src.display_name} / {seg.name}"
+                self._log_line(f"  Kolejkuję: {label}...")
+                fut = self._ai_ref[0].extract_quotes(
+                    segment_text=segment_text,
+                    questions=self._sm.state.questions,
+                    model=model,
+                    system_prompt_template=self._sm.state.prompts.quote_extraction,
+                    on_progress=lambda msg, _l=label: self._log_line(f"    [{_l}] {msg}"),
+                )
+                futures.append((fut, src, seg))
 
-                    def _cb(res, exc, _event=event, _rh=result_holder, _eh=error_holder):
-                        _rh[0] = res
-                        _eh[0] = exc
-                        _event.set()
-
-                    self._ai_ref[0].extract_quotes(
-                        segment_text=segment_text,
-                        questions=self._sm.state.questions,
-                        model=model,
-                        system_prompt_template=self._sm.state.prompts.quote_extraction,
-                        on_done=_cb,
-                        on_progress=lambda msg: self._log_line(f"    {msg}"),
-                    )
-                    event.wait()
-
-                    if error_holder[0]:
-                        errors.append(f"{src.display_name}/{seg.name}: {error_holder[0]}")
-                        self._log_line(f"  BŁĄD {src.display_name}/{seg.name}: {error_holder[0]}")
-                        continue
-
-                    raw_result = result_holder[0]
+            # Collect results as they finish
+            for fut, src, seg in futures:
+                label = f"{src.display_name} / {seg.name}"
+                self.after(0, lambda _l=label: self._progress_label.configure(text=_l))
+                try:
+                    raw_result = fut.result()
                     _save_segment_result(self._sm, src, seg, raw_result)
                     done += 1
-                    self._log_line(f"  OK {src.display_name} / {seg.name}")
+                    self._log_line(f"  OK {label}")
+                except Exception as exc:
+                    errors.append(f"{label}: {exc}")
+                    self._log_line(f"  BŁĄD {label}: {exc}")
 
             # Aggregate all results
             self._log_line("Agregowanie wyników...")
