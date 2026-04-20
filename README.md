@@ -8,7 +8,7 @@ a następnie ekstrakcję cytatów i podsumowań do zadanych zagadnień tematyczn
 
 ## Wymagania
 
-- **Python 3.10 lub nowszy** (pobierz z https://python.org)
+- **Python 3.10 - 3.13** (zalecane **Python 3.12**, pobierz z https://python.org)
 - Klucz API OpenAI (https://platform.openai.com/api-keys)
 - **Linux/Ubuntu**: wymagany pakiet systemowy `python3-tk` (GUI):
   ```bash
@@ -20,12 +20,17 @@ a następnie ekstrakcję cytatów i podsumowań do zadanych zagadnień tematyczn
 
 ## Uruchomienie na Windows (szybki start)
 
-1. Zainstaluj Python 3.10+ (zaznacz opcję **"Add Python to PATH"** podczas instalacji).
+1. Zainstaluj Python **3.10 - 3.13** (najlepiej **3.12**) i zaznacz opcję **"Add Python to PATH"** podczas instalacji.
 2. Pobierz / skopiuj cały folder projektu na dysk, np. `C:\thesis-writer`.
 3. Kliknij dwukrotnie plik **`run.bat`**.
    - Przy pierwszym uruchomieniu automatycznie stworzy środowisko wirtualne (`venv`)
      i zainstaluje wszystkie zależności.
    - Przy kolejnych uruchomieniach tylko uruchamia aplikację.
+   - Skrypt zatrzyma się z czytelnym błędem, jeśli wykryje Python 3.14+.
+
+> Uwaga (Windows): Python 3.14 jest obecnie problematyczny dla części zależności
+> (`Pillow`, `regex`, zależności Markera) i może wymuszać kompilację z C/C++.
+> Użyj Python 3.12 lub 3.13.
 
 ---
 
