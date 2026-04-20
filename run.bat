@@ -1,60 +1,69 @@
 @echo off
 cd /d "%~dp0"
 
-set "PY_CMD=python"
+:: ---------------------------------------------------------------
+:: 1. Pick Python 3.12 via launcher if available, else plain python
+:: ---------------------------------------------------------------
+set PYTHON=python
+
 where py >nul 2>nul
-if not errorlevel 1 (
-    py -3.12 -c "import sys; print(sys.version)" >nul 2>nul
-    if not errorlevel 1 (
-        set "PY_CMD=py -3.12"
+if %errorlevel% equ 0 (
+    py -3.12 --version >nul 2>nul
+    if %errorlevel% equ 0 (
+        set PYTHON=py -3.12
     )
 )
 
-%PY_CMD% -c "import sys; raise SystemExit(0 if (sys.version_info >= (3,10) and sys.version_info < (3,14)) else 1)"
-if errorlevel 1 (
-    echo ERROR: Unsupported Python version detected for %PY_CMD%.
-    echo This project supports Python 3.10 - 3.13.
-    echo Python 3.12 is recommended on Windows.
+:: ---------------------------------------------------------------
+:: 2. Validate version (3.10 - 3.13 only)
+:: ---------------------------------------------------------------
+%PYTHON% -c "import sys,os;sys.exit(0 if (3,10)<=sys.version_info<(3,14) else 1)" >nul 2>nul
+if %errorlevel% neq 0 (
     echo.
-    echo If you have Python 3.12 installed, run:
-    echo   py -3.12 -m venv venv
-    echo Then start again with run.bat.
+    echo  BLAD: Nieobslugiwana wersja Pythona.
+    echo  Wymagany Python 3.10 - 3.13  ^(zalecany 3.12^).
+    echo.
+    echo  Jesli masz Python 3.12 zainstalowany, recznie stworz venv:
+    echo    py -3.12 -m venv venv
+    echo  i uruchom run.bat ponownie.
+    echo.
     pause
     exit /b 1
 )
 
+:: ---------------------------------------------------------------
+:: 3. Create venv if missing
+:: ---------------------------------------------------------------
 if not exist venv (
-    echo Creating virtual environment...
-    %PY_CMD% -m venv venv
-    if errorlevel 1 (
-        echo ERROR: Failed to create virtual environment.
-        echo Make sure Python 3.10 - 3.13 is installed.
+    echo Tworzenie srodowiska wirtualnego...
+    %PYTHON% -m venv venv
+    if %errorlevel% neq 0 (
+        echo BLAD: Nie udalo sie stworzyc venv.
         pause
         exit /b 1
     )
 )
 
-call venv\Scripts\activate
+:: ---------------------------------------------------------------
+:: 4. Activate venv
+:: ---------------------------------------------------------------
+call venv\Scripts\activate.bat
 
-python -c "import sys; raise SystemExit(0 if (sys.version_info >= (3,10) and sys.version_info < (3,14)) else 1)"
-if errorlevel 1 (
-    echo ERROR: Existing venv uses unsupported Python version.
-    echo Delete venv and recreate with Python 3.10 - 3.13 (3.12 recommended):
-    echo   rmdir /s /q venv
-    echo   run.bat
-    pause
-    exit /b 1
-)
-
-echo Installing / updating requirements...
+:: ---------------------------------------------------------------
+:: 5. Install / update requirements
+:: ---------------------------------------------------------------
+echo Instalacja/aktualizacja pakietow...
 pip install -r requirements.txt --quiet
-if errorlevel 1 (
-    echo ERROR: Installing requirements failed.
+if %errorlevel% neq 0 (
+    echo BLAD: pip install nie powiodl sie.
     pause
     exit /b 1
 )
 
-echo Starting Thesis Source Analyzer...
+:: ---------------------------------------------------------------
+:: 6. Run app
+:: ---------------------------------------------------------------
+echo Uruchamianie aplikacji...
 python main.py %*
 
 pause
