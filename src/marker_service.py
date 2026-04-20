@@ -9,6 +9,34 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Model cache — loaded once per process, reused for all segments
+# ---------------------------------------------------------------------------
+_MODEL_CACHE: dict | None = None
+
+
+def get_device_label() -> str:
+    """Return '[GPU]' if CUDA is available, else '[CPU]'."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            return f"[GPU: {name}]"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "[GPU: MPS]"
+    except Exception:
+        pass
+    return "[CPU]"
+
+
+def get_cached_models() -> dict:
+    """Load Marker models once and cache them for the lifetime of the process."""
+    global _MODEL_CACHE
+    if _MODEL_CACHE is None:
+        from marker.models import create_model_dict
+        _MODEL_CACHE = create_model_dict()
+    return _MODEL_CACHE
+
 
 # ---------------------------------------------------------------------------
 # Marker page delimiter format (--paginate_output):
@@ -44,7 +72,6 @@ def run_marker_extraction(
     output_dir is created if it doesn't exist.
     """
     from marker.converters.pdf import PdfConverter
-    from marker.models import create_model_dict
     from marker.config.parser import ConfigParser
     from marker.output import text_from_rendered
 
@@ -58,7 +85,7 @@ def run_marker_extraction(
     })
     converter = PdfConverter(
         config=config_parser.generate_config_dict(),
-        artifact_dict=create_model_dict(),
+        artifact_dict=get_cached_models(),
         processor_list=config_parser.get_processors(),
         renderer=config_parser.get_renderer(),
     )

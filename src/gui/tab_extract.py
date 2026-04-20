@@ -19,6 +19,8 @@ from ..marker_service import (
     replace_image_refs_with_descriptions,
     strip_remaining_image_refs,
     delete_marker_images,
+    get_cached_models,
+    get_device_label,
 )
 from ..ai_service import AIService
 from .components import SegmentSelector, StatusBar
@@ -169,9 +171,17 @@ class ExtractTab(ctk.CTkFrame):
                     # --- MARKER path ---
                     marker_dir = self._sm.marker_output_dir(src_id)
 
+                    # Load (or reuse cached) models — show device label
+                    self._update_progress_label(
+                        f"Ładowanie modeli Marker {get_device_label()}..."
+                    )
+                    get_cached_models()
+
                     for seg in segs:
                         try:
-                            self._update_progress_label(f"{src.display_name} / {seg.name}")
+                            self._update_progress_label(
+                                f"{src.display_name} / {seg.name} {get_device_label()}"
+                            )
                             # IMPORTANT: process only the selected segment pages.
                             # Marker expects 0-based page ranges.
                             page_range = f"{seg.start_page - 1}-{seg.end_page - 1}"
