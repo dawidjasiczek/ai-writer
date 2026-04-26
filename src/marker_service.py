@@ -107,6 +107,7 @@ def split_marker_text_into_segment(
     markdown_text: str,
     start_page: int,  # 1-based, inclusive
     end_page: int,    # 1-based, inclusive
+    page_numbering_start_pdf_page: int = 1,
 ) -> str:
     """
     Slice the paginated Marker markdown to only include pages in [start_page, end_page].
@@ -148,16 +149,20 @@ def split_marker_text_into_segment(
             parts = [(p + start_0, content) for p, content in parts]
 
     chunks: list[str] = []
+    page_shift = page_numbering_start_pdf_page - 1
     for page_idx, content in parts:
         if start_0 <= page_idx <= end_0:
             page_1based = page_idx + 1
-            sep = f"\n\n\n=== [PAGE {page_1based}] ===\n\n\n"
+            logical_page = page_1based - page_shift
+            sep = f"\n\n\n=== [PAGE {logical_page}] ===\n\n\n"
             chunks.append(f"{sep}{content}" if content else sep)
 
     return "\n".join(chunks).strip() + "\n" if chunks else ""
 
 
-def normalize_marker_page_markers(text: str) -> str:
+def normalize_marker_page_markers(
+    text: str, page_numbering_start_pdf_page: int = 1
+) -> str:
     """
     Replace marker pagination delimiters with app page separators:
     {0} + dashed line -> === [PAGE 1] ===
@@ -165,7 +170,8 @@ def normalize_marker_page_markers(text: str) -> str:
     def repl(match: re.Match) -> str:
         page_0 = int(match.group(1))
         page_1 = page_0 + 1
-        return f"\n\n\n=== [PAGE {page_1}] ===\n\n\n"
+        logical_page = page_1 - (page_numbering_start_pdf_page - 1)
+        return f"\n\n\n=== [PAGE {logical_page}] ===\n\n\n"
 
     return _PAGE_DELIM_FALLBACK_RE.sub(repl, text)
 

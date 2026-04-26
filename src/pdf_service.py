@@ -84,12 +84,14 @@ def extract_segment_text(
     start_page: int,
     end_page: int,
     graphic_pages: list[int],
+    page_numbering_start_pdf_page: int = 1,
 ) -> str:
     """
     Extract text from a page range.  Pages in `graphic_pages` become placeholder
     strings instead of real text.  Pages are separated by PAGE_SEPARATOR.
     """
     graphic_set = set(graphic_pages)
+    page_shift = page_numbering_start_pdf_page - 1
     chunks: list[str] = []
 
     with pdfplumber.open(str(pdf_path)) as pdf:
@@ -99,10 +101,11 @@ def extract_segment_text(
             raise ValueError(f"start_page {start_page} exceeds total pages {total}")
 
         for idx in range(start_page - 1, clipped_end):
-            page_no = idx + 1
-            separator = PAGE_SEPARATOR.format(page=page_no)
-            if page_no in graphic_set:
-                content = GRAPHIC_PLACEHOLDER.format(page=page_no)
+            pdf_page_no = idx + 1
+            logical_page_no = pdf_page_no - page_shift
+            separator = PAGE_SEPARATOR.format(page=logical_page_no)
+            if pdf_page_no in graphic_set:
+                content = GRAPHIC_PLACEHOLDER.format(page=logical_page_no)
             else:
                 content = _extract_page_content(pdf.pages[idx]).strip()
             chunks.append(f"{separator}[TEXT]\n{content}" if content else separator)

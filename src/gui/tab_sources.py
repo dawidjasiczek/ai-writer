@@ -96,9 +96,21 @@ class SourcesTab(ctk.CTkFrame):
             graphic_row, text="Zapisz", command=self._save_graphic_pages, width=80
         ).pack(side="left", padx=4)
 
+        # Page numbering start row
+        page_num_row = ctk.CTkFrame(right, fg_color="transparent")
+        page_num_row.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
+        ctk.CTkLabel(page_num_row, text="Numeracja stron od strony PDF:").pack(
+            side="left", padx=(0, 6)
+        )
+        self._page_numbering_start_entry = ctk.CTkEntry(page_num_row, width=90)
+        self._page_numbering_start_entry.pack(side="left", padx=4)
+        ctk.CTkButton(
+            page_num_row, text="Zapisz", command=self._save_page_numbering_start, width=80
+        ).pack(side="left", padx=4)
+
         # Extraction method row
         method_row = ctk.CTkFrame(right, fg_color="transparent")
-        method_row.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
+        method_row.grid(row=4, column=0, sticky="ew", padx=8, pady=4)
         ctk.CTkLabel(method_row, text="Metoda ekstrakcji:").pack(side="left", padx=(0, 6))
         self._extraction_method_btn = ctk.CTkSegmentedButton(
             method_row,
@@ -116,7 +128,7 @@ class SourcesTab(ctk.CTkFrame):
         ).pack(side="left", padx=6)
 
         single_seg_row = ctk.CTkFrame(right, fg_color="transparent")
-        single_seg_row.grid(row=4, column=0, sticky="ew", padx=8, pady=2)
+        single_seg_row.grid(row=5, column=0, sticky="ew", padx=8, pady=2)
         self._single_segment_var = ctk.BooleanVar(value=False)
         self._single_segment_chk = ctk.CTkCheckBox(
             single_seg_row,
@@ -128,7 +140,7 @@ class SourcesTab(ctk.CTkFrame):
 
         # Segments section
         seg_frame = ctk.CTkFrame(right)
-        seg_frame.grid(row=5, column=0, sticky="nsew", padx=8, pady=(4, 8))
+        seg_frame.grid(row=6, column=0, sticky="nsew", padx=8, pady=(4, 8))
         seg_frame.columnconfigure(0, weight=1)
         seg_frame.rowconfigure(1, weight=1)
 
@@ -211,6 +223,8 @@ class SourcesTab(ctk.CTkFrame):
         self._display_name_entry.insert(0, src.display_name)
         self._graphic_pages_entry.delete(0, "end")
         self._graphic_pages_entry.insert(0, ", ".join(str(p) for p in src.graphic_pages))
+        self._page_numbering_start_entry.delete(0, "end")
+        self._page_numbering_start_entry.insert(0, str(src.page_numbering_start_pdf_page))
         self._extraction_method_btn.set(src.extraction_method)
         self._single_segment_var.set(src.single_segment)
         self._set_single_segment_ui_state(src.single_segment)
@@ -226,6 +240,8 @@ class SourcesTab(ctk.CTkFrame):
     def _clear_details(self) -> None:
         self._display_name_entry.delete(0, "end")
         self._graphic_pages_entry.delete(0, "end")
+        self._page_numbering_start_entry.delete(0, "end")
+        self._page_numbering_start_entry.insert(0, "1")
         self._extraction_method_btn.set("pdfplumber")
         self._single_segment_var.set(False)
         self._set_single_segment_ui_state(False)
@@ -259,6 +275,20 @@ class SourcesTab(ctk.CTkFrame):
                 messagebox.showerror("Błąd", "Podaj numery stron oddzielone przecinkami.")
                 return
         self._sm.set_graphic_pages(self._selected_source_id, pages)
+
+    def _save_page_numbering_start(self) -> None:
+        if not self._selected_source_id:
+            return
+        raw = self._page_numbering_start_entry.get().strip()
+        try:
+            value = int(raw) if raw else 1
+        except ValueError:
+            messagebox.showerror("Błąd", "Podaj liczbę całkowitą >= 1.")
+            return
+        if value < 1:
+            messagebox.showerror("Błąd", "Wartość musi być >= 1.")
+            return
+        self._sm.set_page_numbering_start_pdf_page(self._selected_source_id, value)
 
     def _set_single_segment_ui_state(self, enabled: bool) -> None:
         state = "disabled" if enabled else "normal"

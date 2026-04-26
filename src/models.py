@@ -61,6 +61,7 @@ class Source:
     processing_status: ProcessingStatus = field(default_factory=ProcessingStatus)
     extraction_method: str = "pdfplumber"  # "pdfplumber" | "marker"
     single_segment: bool = False
+    page_numbering_start_pdf_page: int = 1
 
     def to_dict(self) -> dict:
         return {
@@ -72,6 +73,7 @@ class Source:
             "processing_status": self.processing_status.to_dict(),
             "extraction_method": self.extraction_method,
             "single_segment": self.single_segment,
+            "page_numbering_start_pdf_page": self.page_numbering_start_pdf_page,
         }
 
     @classmethod
@@ -87,6 +89,7 @@ class Source:
             ),
             extraction_method=d.get("extraction_method", "pdfplumber"),
             single_segment=d.get("single_segment", False),
+            page_numbering_start_pdf_page=d.get("page_numbering_start_pdf_page", 1),
         )
 
 

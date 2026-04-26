@@ -150,8 +150,13 @@ Jeżeli argument nie zostanie podany, aplikacja tworzy i używa folderu
 ### 5. Zakładka „Wyniki"
 - Wybierz pytanie z listy.
 - Odfiltruj źródła / segmenty checkboxami.
+- Opcja **Pomiń puste wyniki** ukrywa sekcje bez cytatów i bez sensownego podsumowania.
+- Opcja **Rozdzielaj na segmenty**:
+  - włączona: widok i eksport per `źródło/segment`,
+  - wyłączona: widok i eksport per `źródło` (agregacja segmentów).
 - Kliknij **Wyświetl wyniki** – zobaczysz cytaty i podsumowania.
 - Kliknij **Eksportuj do .txt** – zapisuje czytelny plik tekstowy.
+- Kliknij **Eksportuj wszystkie pytania do folderu** – zapisuje osobny plik `.txt` dla każdego pytania.
 
 ### 6. Zakładka „Ustawienia"
 - Wpisz klucz OpenAI API.

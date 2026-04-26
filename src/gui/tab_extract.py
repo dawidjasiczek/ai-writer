@@ -196,10 +196,13 @@ class ExtractTab(ctk.CTkFrame):
                                 markdown_text,
                                 seg.start_page,
                                 seg.end_page,
+                                src.page_numbering_start_pdf_page,
                             )
                             # Extra safety: normalize any marker pagination
                             # delimiters that may leak through.
-                            text = normalize_marker_page_markers(text)
+                            text = normalize_marker_page_markers(
+                                text, src.page_numbering_start_pdf_page
+                            )
                             if src.single_segment:
                                 text = re.sub(r"\n{0,3}=== \[PAGE \d+\] ===\n{0,3}", "\n\n", text).strip() + "\n"
                             out_path = self._sm.raw_text_path(src_id, seg.id)
@@ -214,7 +217,11 @@ class ExtractTab(ctk.CTkFrame):
                         try:
                             self._update_progress_label(f"{src.display_name} / {seg.name}")
                             text = extract_segment_text(
-                                pdf_path, seg.start_page, seg.end_page, src.graphic_pages
+                                pdf_path,
+                                seg.start_page,
+                                seg.end_page,
+                                src.graphic_pages,
+                                src.page_numbering_start_pdf_page,
                             )
                             if src.single_segment:
                                 text = re.sub(r"\n{0,3}=== \[PAGE \d+\] ===\n{0,3}", "\n\n", text).strip() + "\n"
@@ -294,6 +301,7 @@ class ExtractTab(ctk.CTkFrame):
                     # Collect all image filenames that appear in raw text for graphic pages
                     marker_dir = self._sm.marker_output_dir(src_id)
                     seen_images: set[str] = set()
+                    page_shift = src.page_numbering_start_pdf_page - 1
 
                     for seg in segs:
                         raw_path = self._sm.raw_text_path(src_id, seg.id)
@@ -303,6 +311,7 @@ class ExtractTab(ctk.CTkFrame):
                         img_refs = find_image_refs_for_pages(raw_text, src.graphic_pages)
 
                         for img_filename, page_1based in img_refs:
+                            logical_page = page_1based - page_shift
                             if img_filename in seen_images:
                                 continue
                             seen_images.add(img_filename)
@@ -310,7 +319,7 @@ class ExtractTab(ctk.CTkFrame):
                             img_path = marker_dir / img_filename
                             if not img_path.exists():
                                 errors.append(
-                                    f"{src.display_name} strona {page_1based}: "
+                                    f"{src.display_name} strona {logical_page}: "
                                     f"brak pliku obrazka {img_filename}"
                                 )
                                 continue
@@ -323,7 +332,7 @@ class ExtractTab(ctk.CTkFrame):
                                 exc,
                                 _desc_path=desc_path,
                                 _img_filename=img_filename,
-                                _page=page_1based,
+                                _page=logical_page,
                             ):
                                 nonlocal done
                                 if exc:
@@ -346,6 +355,7 @@ class ExtractTab(ctk.CTkFrame):
                         continue
 
                     seen_pages: set[tuple[str, int]] = set()
+                    page_shift = src.page_numbering_start_pdf_page - 1
                     for seg in segs:
                         for pg in src.graphic_pages:
                             if seg.start_page <= pg <= seg.end_page:
@@ -354,20 +364,21 @@ class ExtractTab(ctk.CTkFrame):
                                     continue
                                 seen_pages.add(key)
 
-                                img_path = self._sm.graphic_image_path(src_id, pg)
-                                desc_path = self._sm.graphic_description_path(src_id, pg)
+                                logical_pg = pg - page_shift
+                                img_path = self._sm.graphic_image_path(src_id, logical_pg)
+                                desc_path = self._sm.graphic_description_path(src_id, logical_pg)
 
                                 try:
                                     render_page_to_image(pdf_path, pg, img_path)
                                 except Exception as e:
-                                    errors.append(f"Błąd renderowania strony {pg}: {e}")
+                                    errors.append(f"Błąd renderowania strony {logical_pg}: {e}")
                                     continue
 
                                 def _cb(
                                     result: str,
                                     exc,
                                     _src_id=src_id,
-                                    _pg=pg,
+                                    _pg=logical_pg,
                                     _desc_path=desc_path,
                                 ):
                                     nonlocal done
@@ -494,10 +505,12 @@ class ExtractTab(ctk.CTkFrame):
                 else:
                     # --- pdfplumber path (unchanged) ---
                     descriptions_plumber: dict[int, str] = {}
+                    page_shift = src.page_numbering_start_pdf_page - 1
                     for pg in src.graphic_pages:
-                        desc_path = self._sm.graphic_description_path(src_id, pg)
+                        logical_pg = pg - page_shift
+                        desc_path = self._sm.graphic_description_path(src_id, logical_pg)
                         if desc_path.exists():
-                            descriptions_plumber[pg] = desc_path.read_text(encoding="utf-8")
+                            descriptions_plumber[logical_pg] = desc_path.read_text(encoding="utf-8")
 
                     for seg in segs:
                         raw_path = self._sm.raw_text_path(src_id, seg.id)

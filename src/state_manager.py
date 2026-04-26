@@ -157,6 +157,12 @@ class StateManager:
             src.single_segment = value
             self.save()
 
+    def set_page_numbering_start_pdf_page(self, source_id: str, value: int) -> None:
+        src = self.get_source(source_id)
+        if src:
+            src.page_numbering_start_pdf_page = max(1, value)
+            self.save()
+
     # ------------------------------------------------------------------
     # Processing status
     # ------------------------------------------------------------------
